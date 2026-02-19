@@ -1624,8 +1624,8 @@ async function fetchESPNScoreboard() {
             else if (c.met && c.direction === 'OVER') plainText = `Very few free throws so far — ${c.detail.match(/\d+% of expected/)?.[0] || '60%- of expected'}. The low foul rate is suppressing the score. Fouls will pick up → more points → OVER.`;
             else plainText = `Free throw rate is normal — no edge here.`;
           } else if (c.name === 'Pace vs Line') {
-            if (c.met && c.direction === 'UNDER') plainText = `At this scoring rate, the game projects to ~${pm.extrapolatedTotal} total points — that's ${Math.abs(pm.paceGap)} points ABOVE the betting line of ${pm.ouLine}. The pace is too hot to sustain → UNDER.`;
-            else if (c.met && c.direction === 'OVER') plainText = `At this scoring rate, the game projects to ~${pm.extrapolatedTotal} total points — that's ${Math.abs(pm.paceGap)} points BELOW the betting line of ${pm.ouLine}. The pace is too slow to continue → OVER.`;
+            if (c.met && c.direction === 'UNDER') plainText = `If both teams keep scoring at this rate, the final total would be ~${pm.extrapolatedTotal} — that's ${Math.abs(pm.paceGap)} points ABOVE the book's line of ${pm.ouLine}. But they won't keep this up. The book's ${pm.ouLine} is the smarter number → UNDER.`;
+            else if (c.met && c.direction === 'OVER') plainText = `If both teams keep scoring at this rate, the final total would only be ~${pm.extrapolatedTotal} — that's ${Math.abs(pm.paceGap)} points BELOW the book's line of ${pm.ouLine}. But this cold stretch won't last. The book's ${pm.ouLine} is the smarter number → OVER.`;
             else if (pm.ouLine) plainText = `Projected total (~${pm.extrapolatedTotal}) is close to the O/U line (${pm.ouLine}) — no significant gap.`;
             else plainText = `O/U line not available from odds API — can't compare.`;
           }
@@ -1654,20 +1654,23 @@ async function fetchESPNScoreboard() {
             <div class="thesis-bet-line" style="background:${dirBg};">
               <div style="flex:1;">
                 <div class="thesis-bet-action" style="color:${dirColor};font-size:15px;font-weight:800;">🎯 BET ${pm.direction} ${pm.ouLine ? pm.ouLine : ''}</div>
-                <div class="thesis-bet-side" style="font-size:12px;margin-top:2px;">Current pace → ~${pm.extrapolatedTotal} pts total${pm.ouLine ? ' | The book set the line at ' + pm.ouLine + ' (' + (pm.paceGap > 0 ? '+' : '') + pm.paceGap + ' off)' : ''}</div>
+                <div class="thesis-bet-side" style="font-size:12px;margin-top:2px;">${pm.direction === 'UNDER'
+                  ? (pm.ouLine ? 'Pace looks like ~' + pm.extrapolatedTotal + ' pts, but that\\'s fake-high. Real total will drop back toward ' + pm.ouLine + ' or lower.' : 'Pace looks like ~' + pm.extrapolatedTotal + ' pts, but that\\'s inflated by temporary factors.')
+                  : (pm.ouLine ? 'Pace looks like only ~' + pm.extrapolatedTotal + ' pts, but that\\'s fake-low. Real total will climb back toward ' + pm.ouLine + ' or higher.' : 'Pace looks like only ~' + pm.extrapolatedTotal + ' pts, but that\\'s suppressed by temporary factors.')
+                }</div>
               </div>
             </div>
             <div class="thesis-logic">
               <div class="thesis-logic-title">Why Bet ${pm.direction}?</div>
               <div class="thesis-logic-text" style="line-height:1.7;">
                 <div style="margin-bottom:6px;font-size:12px;">${pm.direction === 'UNDER'
-                  ? `<strong>The score is running too high right now.</strong> At the current pace, both teams would combine for ~${pm.extrapolatedTotal} points${pm.ouLine ? ' — but the betting line is only ' + pm.ouLine : ''}. The reason it's so high? Temporary stuff like hot 3PT streaks or too many free throws. Those things ALWAYS cool off as the game goes on.`
-                  : `<strong>The score is running too low right now.</strong> At the current pace, both teams would only combine for ~${pm.extrapolatedTotal} points${pm.ouLine ? ' — but the betting line is ' + pm.ouLine : ''}. The reason it's so low? Temporary stuff like cold 3PT shooting or unusually few free throws. Those things ALWAYS bounce back as the game goes on.`
+                  ? `<strong>The ~${pm.extrapolatedTotal} projection is FAKE.</strong> That number is inflated because right now both teams are riding hot 3PT streaks and/or getting way more free throws than normal. Those things always cool off.${pm.ouLine ? ' The book set the line at ' + pm.ouLine + ' before the game started — they expected a normal pace. The book is right, the current pace is wrong. When the hot shooting cools and fouls normalize, the final score lands at or below ' + pm.ouLine + '.' : ' When the hot shooting cools off, the final total drops significantly.'}`
+                  : `<strong>The ~${pm.extrapolatedTotal} projection is FAKE.</strong> That number is artificially low because right now both teams are shooting cold from 3 and/or getting unusually few free throws. Those things always bounce back.${pm.ouLine ? ' The book set the line at ' + pm.ouLine + ' before the game started — they expected a normal pace. The book is right, the current pace is wrong. When shooting normalizes and natural foul rates resume, the final score climbs to or above ' + pm.ouLine + '.' : ' When the cold shooting normalizes, the final total rises significantly.'}`
                 }</div>
                 <div style="padding:10px 12px;background:${dirBg};border-radius:6px;border-left:3px solid ${dirColor};margin-top:8px;font-size:12px;line-height:1.6;">
-                  <strong>Simple version:</strong> ${pm.direction === 'UNDER'
-                  ? 'Teams are scoring at an unsustainable rate. The hot shooting and/or high foul rate will cool off → final score will be LOWER than the current pace suggests → bet UNDER.'
-                  : 'Teams are scoring at an unsustainably slow rate. The cold shooting and/or low foul rate will normalize → final score will be HIGHER than the current pace suggests → bet OVER.'}
+                  <strong>Think of it this way:</strong> ${pm.direction === 'UNDER'
+                  ? `The projected ~${pm.extrapolatedTotal} assumes the hot streak lasts all game — it won't.${pm.ouLine ? ' The book\\'s ' + pm.ouLine + ' is the smarter number. Bet UNDER ' + pm.ouLine + '.' : ' Bet UNDER.'}`
+                  : `The projected ~${pm.extrapolatedTotal} assumes the cold streak lasts all game — it won't.${pm.ouLine ? ' The book\\'s ' + pm.ouLine + ' is the smarter number. Bet OVER ' + pm.ouLine + '.' : ' Bet OVER.'}`}
                 </div>
               </div>
             </div>
