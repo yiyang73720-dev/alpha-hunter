@@ -1624,8 +1624,8 @@ async function fetchESPNScoreboard() {
             else if (c.met && c.direction === 'OVER') plainText = `Very few free throws so far — ${c.detail.match(/\d+% of expected/)?.[0] || '60%- of expected'}. The low foul rate is suppressing the score. Fouls will pick up → more points → OVER.`;
             else plainText = `Free throw rate is normal — no edge here.`;
           } else if (c.name === 'Pace vs Line') {
-            if (c.met && c.direction === 'UNDER') plainText = `If both teams keep scoring at this rate, the final total would be ~${pm.extrapolatedTotal} — that's ${Math.abs(pm.paceGap)} points ABOVE the book's line of ${pm.ouLine}. But they won't keep this up. The book's ${pm.ouLine} is the smarter number → UNDER.`;
-            else if (c.met && c.direction === 'OVER') plainText = `If both teams keep scoring at this rate, the final total would only be ~${pm.extrapolatedTotal} — that's ${Math.abs(pm.paceGap)} points BELOW the book's line of ${pm.ouLine}. But this cold stretch won't last. The book's ${pm.ouLine} is the smarter number → OVER.`;
+            if (c.met && c.direction === 'UNDER') plainText = `Current pace projects ~${pm.extrapolatedTotal} total — that's ${Math.abs(pm.paceGap)} pts above the pre-game line of ${pm.ouLine}. Live books have likely raised the O/U to match. That inflated live line is your target → bet UNDER it.`;
+            else if (c.met && c.direction === 'OVER') plainText = `Current pace projects only ~${pm.extrapolatedTotal} total — that's ${Math.abs(pm.paceGap)} pts below the pre-game line of ${pm.ouLine}. Live books have likely dropped the O/U to match. That deflated live line is your target → bet OVER it.`;
             else if (pm.ouLine) plainText = `Projected total (~${pm.extrapolatedTotal}) is close to the O/U line (${pm.ouLine}) — no significant gap.`;
             else plainText = `O/U line not available from odds API — can't compare.`;
           }
@@ -1653,10 +1653,10 @@ async function fetchESPNScoreboard() {
           <div class="thesis-body">
             <div class="thesis-bet-line" style="background:${dirBg};">
               <div style="flex:1;">
-                <div class="thesis-bet-action" style="color:${dirColor};font-size:15px;font-weight:800;">🎯 BET ${pm.direction} ${pm.ouLine ? pm.ouLine : ''}</div>
+                <div class="thesis-bet-action" style="color:${dirColor};font-size:15px;font-weight:800;">🎯 BET ${pm.direction} (live total)</div>
                 <div class="thesis-bet-side" style="font-size:12px;margin-top:2px;">${pm.direction === 'UNDER'
-                  ? (pm.ouLine ? 'Pace looks like ~' + pm.extrapolatedTotal + ' pts, but that\\'s fake-high. Real total will drop back toward ' + pm.ouLine + ' or lower.' : 'Pace looks like ~' + pm.extrapolatedTotal + ' pts, but that\\'s inflated by temporary factors.')
-                  : (pm.ouLine ? 'Pace looks like only ~' + pm.extrapolatedTotal + ' pts, but that\\'s fake-low. Real total will climb back toward ' + pm.ouLine + ' or higher.' : 'Pace looks like only ~' + pm.extrapolatedTotal + ' pts, but that\\'s suppressed by temporary factors.')
+                  ? 'Current pace → ~' + pm.extrapolatedTotal + ' pts (fake-high).' + (pm.ouLine ? ' Pre-game line was ' + pm.ouLine + '. Live books have likely pushed the total UP to match this hot pace — that\\'s your edge. Bet UNDER the live total.' : ' The live total has likely been pushed up to match this hot pace — bet UNDER it.')
+                  : 'Current pace → ~' + pm.extrapolatedTotal + ' pts (fake-low).' + (pm.ouLine ? ' Pre-game line was ' + pm.ouLine + '. Live books have likely dropped the total DOWN to match this cold pace — that\\'s your edge. Bet OVER the live total.' : ' The live total has likely been dropped to match this cold pace — bet OVER it.')
                 }</div>
               </div>
             </div>
@@ -1664,13 +1664,13 @@ async function fetchESPNScoreboard() {
               <div class="thesis-logic-title">Why Bet ${pm.direction}?</div>
               <div class="thesis-logic-text" style="line-height:1.7;">
                 <div style="margin-bottom:6px;font-size:12px;">${pm.direction === 'UNDER'
-                  ? `<strong>The ~${pm.extrapolatedTotal} projection is FAKE.</strong> That number is inflated because right now both teams are riding hot 3PT streaks and/or getting way more free throws than normal. Those things always cool off.${pm.ouLine ? ' The book set the line at ' + pm.ouLine + ' before the game started — they expected a normal pace. The book is right, the current pace is wrong. When the hot shooting cools and fouls normalize, the final score lands at or below ' + pm.ouLine + '.' : ' When the hot shooting cools off, the final total drops significantly.'}`
-                  : `<strong>The ~${pm.extrapolatedTotal} projection is FAKE.</strong> That number is artificially low because right now both teams are shooting cold from 3 and/or getting unusually few free throws. Those things always bounce back.${pm.ouLine ? ' The book set the line at ' + pm.ouLine + ' before the game started — they expected a normal pace. The book is right, the current pace is wrong. When shooting normalizes and natural foul rates resume, the final score climbs to or above ' + pm.ouLine + '.' : ' When the cold shooting normalizes, the final total rises significantly.'}`
+                  ? `<strong>The current scoring pace (~${pm.extrapolatedTotal} projected) is inflated.</strong> Hot 3PT streaks and/or extra free throws are pumping up the score right now. Those things always cool off.${pm.ouLine ? '<br><br><strong>Here\\'s the key:</strong> The pre-game line was ' + pm.ouLine + '. During the game, live sportsbooks adjust the total to match what\\'s happening — so they\\'ve likely pushed the live O/U line UP because scoring looks hot. That\\'s where you get your edge. You\\'re not betting UNDER the pre-game ' + pm.ouLine + ' — you\\'re betting UNDER the inflated LIVE total that the books moved up. Go check your sportsbook\\'s live O/U right now.' : '<br><br>Live sportsbooks adjust the total during the game. They\\'ve likely pushed it UP to match this hot pace — that\\'s where you get your edge. Bet UNDER the live total.'}`
+                  : `<strong>The current scoring pace (~${pm.extrapolatedTotal} projected) is deflated.</strong> Cold 3PT shooting and/or unusually few free throws are holding the score down. Those things always bounce back.${pm.ouLine ? '<br><br><strong>Here\\'s the key:</strong> The pre-game line was ' + pm.ouLine + '. During the game, live sportsbooks adjust the total to match what\\'s happening — so they\\'ve likely dropped the live O/U line DOWN because scoring looks cold. That\\'s where you get your edge. You\\'re not betting OVER the pre-game ' + pm.ouLine + ' — you\\'re betting OVER the deflated LIVE total that the books moved down. Go check your sportsbook\\'s live O/U right now.' : '<br><br>Live sportsbooks adjust the total during the game. They\\'ve likely dropped it DOWN to match this cold pace — that\\'s where you get your edge. Bet OVER the live total.'}`
                 }</div>
                 <div style="padding:10px 12px;background:${dirBg};border-radius:6px;border-left:3px solid ${dirColor};margin-top:8px;font-size:12px;line-height:1.6;">
-                  <strong>Think of it this way:</strong> ${pm.direction === 'UNDER'
-                  ? `The projected ~${pm.extrapolatedTotal} assumes the hot streak lasts all game — it won't.${pm.ouLine ? ' The book\\'s ' + pm.ouLine + ' is the smarter number. Bet UNDER ' + pm.ouLine + '.' : ' Bet UNDER.'}`
-                  : `The projected ~${pm.extrapolatedTotal} assumes the cold streak lasts all game — it won't.${pm.ouLine ? ' The book\\'s ' + pm.ouLine + ' is the smarter number. Bet OVER ' + pm.ouLine + '.' : ' Bet OVER.'}`}
+                  <strong>💡 The edge:</strong> ${pm.direction === 'UNDER'
+                  ? 'Live books see the hot pace and raise the total. But the pace is fake — built on streaks that will cool. The live UNDER is mispriced because the book reacted to unsustainable scoring.'
+                  : 'Live books see the cold pace and lower the total. But the pace is fake — built on cold streaks that will warm up. The live OVER is mispriced because the book reacted to unsustainable scoring.'}
                 </div>
               </div>
             </div>
