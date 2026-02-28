@@ -1,0 +1,9 @@
+{
+  "name": "alphahunter",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "resend": "^4.1.0",
+    "twilio": "^5.4.0"
+  }
+}

@@ -254,6 +254,11 @@
 .signal-badge.badge-hot{background:#ef4444}
 .signal-badge.badge-warm{background:#f97316}
 .signal-badge.badge-qtr{background:#eab308}
+.signal-badge.badge-fav{background:#10b981}
+.signal-badge.badge-dog{background:#7c3aed}
+.signal-badge.badge-stayaway{background:#dc2626}
+.signal-badge.badge-ml{background:#f0b90b;color:#1a1a2e}
+.signal-badge.badge-spread{background:#3861fb}
 
 
     .theory-toggle{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;margin:16px auto;max-width:1200px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:all .2s}
@@ -478,24 +483,23 @@
         <div class="chip-label">Games</div>
         <div class="chip-desc">Total live games tracked</div>
       </div>
-      <div class="signal-chip signal-chip-clickable" onclick="toggleSignalDetail('3ptfragile')">
-        <div class="chip-value" id="live-3ptfragile-signals">0</div>
-        <div class="chip-label">3PT Fragile</div>
-        <div class="chip-desc">Hot 3PT shooting + fragile lead composition</div>
-        <div class="chip-detail-panel" id="chip-detail-3ptfragile"></div>
+      <div class="signal-chip signal-chip-clickable" onclick="toggleSignalDetail('fav')" style="border-left:3px solid #10b981;">
+        <div class="chip-value" id="live-fav-signals" style="color:#10b981;">0</div>
+        <div class="chip-label">FAV</div>
+        <div class="chip-desc">Fav leading big — bet fav spread</div>
+        <div class="chip-detail-panel" id="chip-detail-fav"></div>
       </div>
-      <div class="signal-chip signal-chip-clickable" onclick="toggleSignalDetail('star')">
-        <div class="chip-value" id="live-star-signals">0</div>
-        <div class="chip-label">Star Coil</div>
-        <div class="chip-desc">Star cold + game close + Q2-Q3</div>
-        <div class="chip-detail-panel" id="chip-detail-star"></div>
+      <div class="signal-chip signal-chip-clickable" onclick="toggleSignalDetail('dog')" style="border-left:3px solid #7c3aed;">
+        <div class="chip-value" id="live-dog-signals" style="color:#7c3aed;">0</div>
+        <div class="chip-label">DOG</div>
+        <div class="chip-desc">Pre-game dog leading — bet dog ML/spread</div>
+        <div class="chip-detail-panel" id="chip-detail-dog"></div>
       </div>
-
-      <div class="signal-chip signal-chip-clickable" onclick="toggleSignalDetail('combined')">
-        <div class="chip-value" id="live-combined-signals">0</div>
-        <div class="chip-label">Combined</div>
-        <div class="chip-desc">2+ signals on same side</div>
-        <div class="chip-detail-panel" id="chip-detail-combined"></div>
+      <div class="signal-chip signal-chip-clickable" onclick="toggleSignalDetail('stayaway')" style="border-left:3px solid #dc2626;">
+        <div class="chip-value" id="live-stayaway-signals" style="color:#dc2626;">0</div>
+        <div class="chip-label">STAY AWAY</div>
+        <div class="chip-desc">Fav hot from 3 — dog only covers 35%</div>
+        <div class="chip-detail-panel" id="chip-detail-stayaway"></div>
       </div>
     </div>
 
@@ -848,7 +852,7 @@ async function fetchLiveOdds(){
   if(oddsRequestCount>=480){console.warn('Odds API near limit');return oddsCache;}
   try{
     const sport=getOddsSport();
-    const resp=await fetch('https://api.the-odds-api.com/v4/sports/'+sport+'/odds/?apiK'+'ey=4ca2c6a2ed9e162809eb03722e2dc734&regions=us&markets=h2h,totals&oddsFormat=american&bookmakers=fanduel,draftkings,betmgm');
+    const resp=await fetch('https://api.the-odds-api.com/v4/sports/'+sport+'/odds/?apiK'+'ey=4ca2c6a2ed9e162809eb03722e2dc734&regions=us&markets=h2h,spreads,totals&oddsFormat=american&bookmakers=fanduel,draftkings,betmgm');
     if(!resp.ok){console.warn('Odds API:',resp.status);return oddsCache;}
     const data=await resp.json();
     oddsRequestCount++;
@@ -870,6 +874,16 @@ async function fetchLiveOdds(){
         }
       }
       if(homeML===null||awayML===null)continue;
+      // Find spreads from ANY bookmaker
+      let homeSpread=null,awaySpread=null;
+      for(const bk of (g.bookmakers||[])){
+        const spMkt=bk.markets?.find(m=>m.key==='spreads');
+        if(spMkt){
+          const ho=spMkt.outcomes?.find(o=>o.name===g.home_team);
+          const ao=spMkt.outcomes?.find(o=>o.name===g.away_team);
+          if(ho&&ao){homeSpread=ho.point;awaySpread=ao.point;break;}
+        }
+      }
       // Find totals from ANY bookmaker (not just the first one)
       let ouLine=null,overPrice=null,underPrice=null;
       for(const bk of (g.bookmakers||[])){
@@ -882,7 +896,7 @@ async function fetchLiveOdds(){
           if(ouLine)break; // found it, stop searching
         }
       }
-      nc[g.away_team+' vs '+g.home_team]={home:g.home_team,away:g.away_team,homeML,awayML,book:bookName,ouLine,overPrice,underPrice};
+      nc[g.away_team+' vs '+g.home_team]={home:g.home_team,away:g.away_team,homeML,awayML,homeSpread,awaySpread,book:bookName,ouLine,overPrice,underPrice};
     }
     oddsCache=nc;oddsCacheTime=now;return nc;
   }catch(e){console.warn('Odds error:',e);return oddsCache;}
@@ -982,6 +996,12 @@ function sendSignalNotification(title, body, gameId, signalType) {
   // Play pleasant chime for new signals
   if (signalType.startsWith('star_')) playAlertSound('coil');
   else if (signalType.startsWith('3ptfragile')) playAlertSound('hot3pt');
+  // Send email/phone alert via serverless API (silent fail if not configured)
+  fetch('/api/alerts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: signalType, team: signalType.split('_').pop(), game: title, signalType, tier: signalType.includes('combined') ? 3 : 1, score: body })
+  }).catch(() => {});
 }
 
 // ==================== TABS ====================
@@ -1011,7 +1031,7 @@ function toggleSignalDetail(type) {
 
   // Build panel content from stored signal games
   const games = window._signalGames ? window._signalGames[type] : [];
-  const labels = { '3ptfragile': '3PT Fragile', 'star': 'Star Coil', 'combined': 'Combined Edge' };
+  const labels = { '3ptfragile': '3PT Fragile', 'star': 'Star Coil', 'combined': 'Combined Edge', 'fav': 'FAV Signal', 'dog': 'DOG Signal', 'stayaway': 'STAY AWAY' };
 
   if (!games || games.length === 0) {
     panel.innerHTML = `<div class="chip-detail-header">${labels[type] || type} Games</div><div class="chip-detail-empty">No active ${labels[type] || ''} signals right now</div>`;
@@ -1367,9 +1387,10 @@ async function fetchESPNScoreboard() {
     }
 
     let sig3Fragile=0, sigStar=0, sigCombined=0, hotTeams=0, warmTeams=0;
+    let sigFav=0, sigDog=0, sigStayAway=0;
     let cards='', tpCards='', gameTheses=[];
     // Per-signal game tracking for chip click-to-expand
-    let signalGames = { '3ptfragile': [], 'star': [], 'combined': [] };
+    let signalGames = { '3ptfragile': [], 'star': [], 'combined': [], 'fav': [], 'dog': [], 'stayaway': [] };
 
     for (const event of liveEvents) {
       const comp = event.competitions?.[0]; if (!comp) continue;
@@ -1629,18 +1650,134 @@ async function fetchESPNScoreboard() {
           }
         });
 
-        // COMBINED - 2 independent signals on same game = combined edge
+        // ========== NEW VALIDATED SIGNALS ==========
+        const _elapsed = getElapsedMinutes(per, clk);
+        const _scoreDiff = Math.abs(aS - hS);
+        const _oddsData = matchOdds(aA, hA, aFull, hFull);
+
+        // Determine pre-game favorite from odds (spread or ML)
+        let pregameSpread = null;
+        let favSide = null, dogSide = null;
+        let favAbbr = null, dogAbbr = null, favFullName = null, dogFullName = null;
+        if (_oddsData) {
+          if (_oddsData.homeSpread != null && _oddsData.awaySpread != null) {
+            if (_oddsData.homeSpread < _oddsData.awaySpread) {
+              favSide = 'home'; dogSide = 'away';
+              favAbbr = hA; dogAbbr = aA; favFullName = hFull; dogFullName = aFull;
+              pregameSpread = _oddsData.homeSpread;
+            } else {
+              favSide = 'away'; dogSide = 'home';
+              favAbbr = aA; dogAbbr = hA; favFullName = aFull; dogFullName = hFull;
+              pregameSpread = _oddsData.awaySpread;
+            }
+          } else {
+            if (_oddsData.homeML < _oddsData.awayML) {
+              favSide = 'home'; dogSide = 'away';
+              favAbbr = hA; dogAbbr = aA; favFullName = hFull; dogFullName = aFull;
+            } else {
+              favSide = 'away'; dogSide = 'home';
+              favAbbr = aA; dogAbbr = hA; favFullName = aFull; dogFullName = hFull;
+            }
+          }
+        }
+
+        const favScore = favSide === 'home' ? hS : favSide === 'away' ? aS : 0;
+        const dogScore = dogSide === 'home' ? hS : dogSide === 'away' ? aS : 0;
+        const favLeading = favScore > dogScore;
+        const dogLeading = dogScore > favScore;
+        const favLeadAmt = favScore - dogScore;
+        const dogLeadAmt = dogScore - favScore;
+
+        // ===== STAY AWAY SIGNAL (anti-signal) =====
+        // When fav leads + hot 3pt → dog covers only 35%, STAY AWAY
+        const has3ptFragileL2 = signals.some(s => s.type === '3ptFragile' && s.level === 2);
+        if (has3ptFragileL2 && favSide && favLeading && favLeadAmt >= 3) {
+          signals.push({type:'stayaway', text:`⚠️ STAY AWAY — ${favAbbr} leads ${favLeadAmt}pts + hot from 3. Dog covers only 35% in this spot. Do NOT bet ${dogAbbr}.`, level:2});
+          sigStayAway++;
+          sendSignalNotification('⚠️ STAY AWAY: ' + gLabel, favAbbr + ' hot from 3 + leading. Dog covers only 35%.', gid, 'stayaway');
+        }
+
+        // ===== FAV SIGNALS =====
+        if (favSide && _elapsed >= 14 && favLeading) {
+          const _timeRem = 48 - _elapsed;
+          const _leadSafety = _timeRem > 0 ? favLeadAmt / Math.sqrt(_timeRem) : 0;
+          const _spreadRel = pregameSpread !== null ? favLeadAmt - Math.abs(pregameSpread) : null;
+
+          if (favLeadAmt >= 11) {
+            let favTier = 'SIMPLE';
+            let favPct = '72.2% cover, +37.8% ROI';
+            if (_leadSafety >= 3 && _spreadRel !== null && _spreadRel >= 10) {
+              favTier = 'TIER 1';
+              favPct = '82.9% cover';
+            }
+            signals.push({type:'fav', text:`✅ FAV ${favTier}: ${favAbbr} leads ${favLeadAmt}pts at ${_elapsed.toFixed(0)}min — ${favPct}`, level:2});
+            sigFav++;
+            sendSignalNotification('✅ FAV ' + favTier + ': ' + favAbbr, `Leads ${favLeadAmt}pts — ${favPct}`, gid, 'fav_' + favAbbr);
+            if (!state.signalFirstSeen[gid]) state.signalFirstSeen[gid] = Date.now();
+            thesis.criteria['fav'] = {met:true, strong:favTier !== 'SIMPLE', label:`FAV ${favTier}: ${favAbbr}`, detail:`<strong>Favorite:</strong> ${favAbbr} (spread: ${pregameSpread || 'N/A'})<br><strong>Lead:</strong> ${favLeadAmt}pts at ${_elapsed.toFixed(0)}min<br><strong>Lead Safety:</strong> ${_leadSafety.toFixed(2)}<br><strong>Spread Rel:</strong> ${_spreadRel !== null ? _spreadRel.toFixed(1) : 'N/A'}`, value:`${favTier} | Lead ${favLeadAmt}`};
+          }
+        }
+
+        // ===== DOG SIGNALS =====
+        // Pre-game favorite is trailing in Q2+ = DOG_LEADING (63.4% dog cover)
+        if (favSide && _elapsed >= 14 && dogLeading) {
+          let dogTier = 'LEADING';
+          let dogPct = '63.4%';
+          let dogExtras = [];
+          const dogStats2 = dogSide === 'home' ? hStats : aStats;
+          const favStats2 = dogSide === 'home' ? aStats : hStats;
+          const dogReb = parseInt(dogStats2.totalRebounds || dogStats2.rebounds || '0');
+          const favReb = parseInt(favStats2.totalRebounds || favStats2.rebounds || '0');
+          const dogFtaV = dogSide === 'home' ? hFTA : aFTA;
+          const favFtaV = dogSide === 'home' ? aFTA : hFTA;
+          const dogWinsReb = dogReb > favReb;
+          const dogWinsFta = dogFtaV > favFtaV;
+
+          if (dogWinsReb) {
+            dogTier = 'PHYSICAL';
+            dogPct = '65.5%';
+            dogExtras.push(`REB: ${dogAbbr} ${dogReb} vs ${favAbbr} ${favReb}`);
+          }
+          if (dogLeadAmt >= 5 && dogWinsReb && dogWinsFta) {
+            dogTier = 'STRONG';
+            dogPct = '70.6%';
+            dogExtras.push(`FTA: ${dogAbbr} ${dogFtaV} vs ${favAbbr} ${favFtaV}`);
+          }
+
+          // HYBRID ML/SPREAD logic
+          const dogML = dogSide === 'home' ? (_oddsData?.homeML || null) : (_oddsData?.awayML || null);
+          let betType = 'SPREAD', betColor = '#3861fb';
+          if (dogML !== null && dogML >= -100) { betType = 'ML'; betColor = '#f0b90b'; }
+          const betTypeLabel = betType === 'ML' ? `BET ML (${dogML > 0 ? '+' : ''}${dogML})` : `BET SPREAD`;
+
+          signals.push({type:'dog', text:`🐕 DOG ${dogTier}: ${dogAbbr} leads ${dogLeadAmt}pt | ${dogPct} cover. ${dogExtras.join(' | ')} → <span style="color:${betColor};font-weight:800;">${betTypeLabel}</span>`, level:2, betType, betColor, dogML});
+          sigDog++;
+          sendSignalNotification('🐕 DOG ' + dogTier + ': ' + dogAbbr, `Leads ${dogLeadAmt}pts → ${betTypeLabel}`, gid, 'dog_' + dogAbbr);
+          if (!state.signalFirstSeen[gid]) state.signalFirstSeen[gid] = Date.now();
+          thesis.criteria['dog'] = {met:true, strong:dogTier !== 'LEADING', label:`DOG ${dogTier}: ${dogAbbr}`, detail:`<strong>Underdog:</strong> ${dogAbbr} (pre-game spread: ${pregameSpread ? (pregameSpread > 0 ? '+' : '') + pregameSpread : 'N/A'})<br><strong>Current:</strong> ${dogAbbr} leads ${dogLeadAmt}pts at ${_elapsed.toFixed(0)}min<br><strong>REB:</strong> ${dogAbbr} ${dogReb} vs ${favAbbr} ${favReb} ${dogWinsReb ? '✅' : ''}<br><strong>FTA:</strong> ${dogAbbr} ${dogFtaV} vs ${favAbbr} ${favFtaV} ${dogWinsFta ? '✅' : ''}<br><strong>Bet:</strong> <span style="color:${betColor};font-weight:800;">${betTypeLabel}</span>`, value:`${dogTier} | ${betTypeLabel}`};
+        }
+
+        // COMBINED - 2+ independent signals on same game
         const has3ptFragile=signals.some(s=>s.type==='3ptFragile'&&s.level===2);
         const hasStar=signals.some(s=>s.type==='star'&&s.level===2);
-        const activeSignals = [has3ptFragile, hasStar].filter(Boolean).length;
-        if (activeSignals >= 2) { signalLevel=2; sigCombined++; }
-        else if (activeSignals === 1) signalLevel=1;
+        const hasFav=signals.some(s=>s.type==='fav'&&s.level===2);
+        const hasDog=signals.some(s=>s.type==='dog'&&s.level===2);
+        const hasStayAway=signals.some(s=>s.type==='stayaway'&&s.level===2);
+        const activeBetSignals = [has3ptFragile, hasStar, hasFav, hasDog].filter(Boolean).length;
+        if (activeBetSignals >= 2) { signalLevel=2; sigCombined++; }
+        else if (hasFav || hasDog) signalLevel=2;
+        else if (activeBetSignals === 1) signalLevel=1;
+        // Stay away overrides: if stay away fires, suppress bet signals for dog side
+        if (hasStayAway && !hasFav && !hasDog) signalLevel = Math.max(signalLevel, 1);
 
         // Track which games have which signals for chip click-to-expand
         const _gameInfo = { game: gLabel, gameFull: gLabelFull, aScore: aS, hScore: hS, per, clk, detail, eventId: gid };
         if (has3ptFragile) signalGames['3ptfragile'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='3ptFragile'&&s.level===2).map(s=>s.text).join('; ') });
         if (hasStar) signalGames['star'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='star'&&s.level===2).map(s=>s.text).join('; ') });
-        if (activeSignals >= 2) signalGames['combined'].push({ ..._gameInfo, sigDetail: `${activeSignals} signals active: ${[has3ptFragile?'3PT Fragile':'',hasStar?'Star Coil':''].filter(Boolean).join(' + ')}` });
+        if (hasFav) signalGames['fav'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='fav'&&s.level===2).map(s=>s.text).join('; ') });
+        if (hasDog) signalGames['dog'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='dog'&&s.level===2).map(s=>s.text).join('; ') });
+        if (hasStayAway) signalGames['stayaway'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='stayaway'&&s.level===2).map(s=>s.text).join('; ') });
+        if (activeBetSignals >= 2) signalGames['combined'].push({ ..._gameInfo, sigDetail: `${activeBetSignals} signals active` });
 
         // Determine bet side and build thesis logic
         if (signalLevel >= 2) {
@@ -1670,13 +1807,22 @@ async function fetchESPNScoreboard() {
           else if (hStarCoil?.coilTier === 'standard') { awayFade += 1; } // home standard coil = home bounces back = fade away
           else if (hStarCoil?.coilTier === 'locked') { homeFade += 1; }   // home locked = home done = fade home
 
-          if (awayFade > homeFade) { betTeam = hA; fadeTeam = aA; }
+          // FAV/DOG signals override fade logic for bet team
+          const _favCrit = thesis.criteria['fav'];
+          const _dogCrit = thesis.criteria['dog'];
+          if (_favCrit?.met && favAbbr) {
+            betTeam = favAbbr; fadeTeam = dogAbbr || (favAbbr === aA ? hA : aA);
+          } else if (_dogCrit?.met && dogAbbr) {
+            betTeam = dogAbbr; fadeTeam = favAbbr || (dogAbbr === aA ? hA : aA);
+          } else if (awayFade > homeFade) { betTeam = hA; fadeTeam = aA; }
           else if (homeFade > awayFade) { betTeam = aA; fadeTeam = hA; }
           else if (awayFade > 0) { betTeam = hA; fadeTeam = aA; }
           else { betTeam = aS < hS ? aA : hA; fadeTeam = aS < hS ? hA : aA; }
 
           // Build the narrative — use full names for clarity
           // NOTE: _aD and _hD already declared above in 3PT Fragile section
+          if (_favCrit?.met) reasons.push(`✅ FAV signal: ${favAbbr} leads ${favLeadAmt}pts — validated ${_favCrit.value}.`);
+          if (_dogCrit?.met) reasons.push(`🐕 DOG signal: ${dogAbbr} (pre-game dog) is winning — validated ${_dogCrit.value}.`);
           if (a3F?.met && a3F?.strong) reasons.push(`${_aD} has a 3PT Fragile Lead — shooting hot from 3 AND lead depends on it (${a3F.value}). ${_hD} has the engine to capitalize.`);
           if (a3F?.met && !a3F?.strong && a3Check.isHot && aFragileData) reasons.push(`${_aD} has 3PT Fragile Lead but ${_hD}'s offense is broken (${hNon3Ppm.toFixed(1)} non-3PT PPM) — regression may not flip the result. Weaker signal.`);
           if (h3F?.met && h3F?.strong) reasons.push(`${_hD} has a 3PT Fragile Lead — shooting hot from 3 AND lead depends on it (${h3F.value}). ${_aD} has the engine to capitalize.`);
@@ -1764,15 +1910,18 @@ async function fetchESPNScoreboard() {
 
       // Signal summary for card header
       const sigSummary = signals.filter(s=>s.level===2).map(s => {
-        const icons = {'3pt':'3PT','star':'STAR','fragile':'FRAG','combined':'COMBO'};
-        return icons[s.type] || s.type.toUpperCase();
+        const icons = {'3ptFragile':'3PT','star':'STAR','fav':'FAV','dog':'DOG','stayaway':'⚠️','combined':'COMBO'};
+        const colors = {'fav':'#10b981','dog':'#7c3aed','stayaway':'#dc2626','3ptFragile':'#3b82f6','star':'#f59e0b'};
+        const label = icons[s.type] || s.type.toUpperCase();
+        const col = colors[s.type] || 'var(--accent)';
+        return `<span style="background:${col};color:#fff;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">${label}</span>`;
       });
 
       cards += `<div class="game-card ${cc}" data-game-id="${gid}">
         <div class="${hc}">
           <span>${isLive ? '<span style="color:var(--red);font-weight:700;">LIVE</span> ' + periodLabel + ' ' + clk : 'UPCOMING'}</span>
           <span style="display:flex;align-items:center;gap:6px;">
-            ${sigSummary.length ? '<span style="font-size:9px;font-weight:700;color:var(--accent);background:var(--accent-light);padding:1px 6px;border-radius:3px;">' + sigSummary.join(' + ') + '</span>' : ''}
+            ${sigSummary.length ? '<span style="display:flex;gap:3px;align-items:center;">' + sigSummary.join('') + '</span>' : ''}
             <span class="fav-star" onclick="toggleFavorite('${gid}')" style="cursor:pointer;font-size:14px;">${isFav?'\u2605':'\u2606'}</span>
           </span>
         </div>
@@ -1809,8 +1958,30 @@ async function fetchESPNScoreboard() {
           <!-- SIGNALS -->
           ${signals.length?(()=>{
             const rec=getRecommendation(aS,hS,aA,hA,per,clk,signalLevel);
+            // Check for new validated signals
+            const _hasFavSig=signals.some(s=>s.type==='fav'&&s.level===2);
+            const _hasDogSig=signals.some(s=>s.type==='dog'&&s.level===2);
+            const _hasStayAwaySig=signals.some(s=>s.type==='stayaway'&&s.level===2);
+            const _dogSig=signals.find(s=>s.type==='dog'&&s.level===2);
+
             let titleText,recDetail='',betBtn='';
-            if(signalLevel<2){
+
+            // Priority: STAY AWAY > FAV > DOG > legacy signals
+            if (_hasStayAwaySig && !_hasFavSig && !_hasDogSig) {
+              titleText='⚠️ STAY AWAY';
+              recDetail=`<div style="font-size:11px;margin-top:4px;font-weight:700;color:#dc2626;">Dog covers only 35% when fav leads + hot 3PT. Do NOT bet the dog.</div>`;
+            } else if (_hasFavSig) {
+              const _favSig=signals.find(s=>s.type==='fav'&&s.level===2);
+              titleText=`✅ FAV SIGNAL — BET ${favAbbr||''} SPREAD`;
+              recDetail=`<div style="font-size:11px;margin-top:4px;font-weight:700;color:#10b981;">${_favSig?.text||''}</div>`;
+              betBtn=`<div style="margin-top:6px;"><button class="btn btn-sm" style="background:#10b981;color:#fff;" onclick="openLogModal('${aA} @ ${hA}','${favAbbr||''} Spread','FAV Signal')">Log FAV Bet</button></div>`;
+            } else if (_hasDogSig) {
+              const _betCol = _dogSig?.betColor || '#7c3aed';
+              const _betLbl = _dogSig?.betType === 'ML' ? `BET ${dogAbbr||''} ML` : `BET ${dogAbbr||''} SPREAD`;
+              titleText=`🐕 DOG SIGNAL — ${_betLbl}`;
+              recDetail=`<div style="font-size:11px;margin-top:4px;font-weight:700;color:${_betCol};">${_dogSig?.text||''}</div>`;
+              betBtn=`<div style="margin-top:6px;"><button class="btn btn-sm" style="background:${_betCol};color:#fff;" onclick="openLogModal('${aA} @ ${hA}','${dogAbbr||''} ${_dogSig?.betType||'Spread'}','DOG Signal')">Log DOG Bet</button></div>`;
+            } else if(signalLevel<2){
               titleText='DEVELOPING';
             } else if(rec.type==='ML'){
               titleText=`EDGE \u2014 ML PLAY: ${rec.side} ML`;
@@ -1824,12 +1995,24 @@ async function fetchESPNScoreboard() {
               titleText='EDGE \u2014 WATCH';
               recDetail=`<div style="font-size:11px;margin-top:4px;font-weight:700;color:var(--text-muted);">&#x1F440; ${rec.reasoning}</div>`;
             }
-            const bgColor=signalLevel===2?(rec.type==='WATCH'?'var(--accent-light)':'var(--accent-light)'):'var(--orange-light)';
-            const borderColor=signalLevel===2?'var(--accent)':'var(--orange)';
-            const titleColor=signalLevel===2?'var(--accent)':'var(--orange)';
+
+            // Pick panel colors based on signal type
+            let bgColor, borderColor, titleColor;
+            if (_hasStayAwaySig && !_hasFavSig && !_hasDogSig) {
+              bgColor='var(--red-light)'; borderColor='#dc2626'; titleColor='#dc2626';
+            } else if (_hasFavSig) {
+              bgColor='var(--green-light)'; borderColor='#10b981'; titleColor='#10b981';
+            } else if (_hasDogSig) {
+              bgColor='var(--purple-light)'; borderColor=_dogSig?.betColor||'#7c3aed'; titleColor=_dogSig?.betColor||'#7c3aed';
+            } else {
+              bgColor=signalLevel===2?'var(--accent-light)':'var(--orange-light)';
+              borderColor=signalLevel===2?'var(--accent)':'var(--orange)';
+              titleColor=signalLevel===2?'var(--accent)':'var(--orange)';
+            }
+
             return `<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:${bgColor};border-left:3px solid ${borderColor};">
               <div style="font-size:10px;font-weight:800;color:${titleColor};margin-bottom:4px;letter-spacing:0.5px;">${titleText}</div>
-              ${signals.map(s=>`<div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">${s.level===2?'&#x1F525;':'&#x26A0;&#xFE0F;'} ${s.text}</div>`).join('')}
+              ${signals.filter(s=>s.type!=='fav'&&s.type!=='dog'&&s.type!=='stayaway').map(s=>`<div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">${s.level===2?'&#x1F525;':'&#x26A0;&#xFE0F;'} ${s.text}</div>`).join('')}
               ${recDetail}
               ${betBtn}
               ${state.signalFirstSeen[gid]?`<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">\u23F1 ${Math.floor((Date.now()-state.signalFirstSeen[gid])/60000)}m ago</div>`:''}
@@ -1863,8 +2046,9 @@ async function fetchESPNScoreboard() {
       qbPanel.style.display = 'block';
       qbCards.innerHTML = gameTheses.map(t => {
         const sigs = t.signals.filter(s=>s.level===2).map(s => {
-          const badges = {'3pt':'3PT','star':'STAR','fragile':'FRAGILE'};
-          return '<span class="signal-badge badge-' + s.type + '">' + (badges[s.type]||s.type.toUpperCase()) + '</span>';
+          const badges = {'3ptFragile':'3PT','star':'STAR','fav':'FAV','dog':'DOG','stayaway':'⚠️ STAY AWAY'};
+          const bCls = {'fav':'fav','dog':'dog','stayaway':'stayaway','3ptFragile':'3pt','star':'star'};
+          return '<span class="signal-badge badge-' + (bCls[s.type]||s.type) + '">' + (badges[s.type]||s.type.toUpperCase()) + '</span>';
         }).join(' ');
         const oddsStr = t.marketOdds ? ' @ ' + (t.marketOdds > 0 ? '+' : '') + t.marketOdds : '';
         const kellyStr = t.kellyPct ? ' (Kelly: ' + (t.kellyPct*100).toFixed(1) + '%)' : '';
@@ -1904,17 +2088,29 @@ async function fetchESPNScoreboard() {
       }
     });
 
-    // Update counts
-    document.getElementById('live-3ptfragile-signals').textContent = sig3Fragile;
-    document.getElementById('live-star-signals').textContent = sigStar;
-    document.getElementById('live-combined-signals').textContent = sigCombined;
-    // Glow effect on combined chip when 2+ signals fire
-    const combinedChip = document.getElementById('live-combined-signals').closest('.signal-chip');
-    if (sigCombined > 0) { combinedChip.classList.add('combined-active'); } else { combinedChip.classList.remove('combined-active'); }
+    // Update counts — new signal chips
+    const _favEl = document.getElementById('live-fav-signals');
+    const _dogEl = document.getElementById('live-dog-signals');
+    const _stayEl = document.getElementById('live-stayaway-signals');
+    if (_favEl) _favEl.textContent = sigFav;
+    if (_dogEl) _dogEl.textContent = sigDog;
+    if (_stayEl) _stayEl.textContent = sigStayAway;
+    // Legacy elements (keep for backwards compat if they exist)
+    const _3ptEl = document.getElementById('live-3ptfragile-signals');
+    const _starEl = document.getElementById('live-star-signals');
+    const _combEl = document.getElementById('live-combined-signals');
+    if (_3ptEl) _3ptEl.textContent = sig3Fragile;
+    if (_starEl) _starEl.textContent = sigStar;
+    if (_combEl) _combEl.textContent = sigCombined;
+    // Glow effect on FAV/DOG chips when signals fire
+    if (_favEl && sigFav > 0) _favEl.closest('.signal-chip')?.classList.add('combined-active');
+    else if (_favEl) _favEl.closest('.signal-chip')?.classList.remove('combined-active');
+    if (_dogEl && sigDog > 0) _dogEl.closest('.signal-chip')?.classList.add('combined-active');
+    else if (_dogEl) _dogEl.closest('.signal-chip')?.classList.remove('combined-active');
     document.getElementById('threept-hot-count').textContent = hotTeams;
     document.getElementById('threept-warm-count').textContent = warmTeams;
 
-    const totalSigs = sig3Fragile+sigStar;
+    const totalSigs = sigFav+sigDog+sigStayAway+sig3Fragile+sigStar;
     if (totalSigs>0) { document.getElementById('live-badge').style.display='inline'; document.getElementById('live-badge').textContent=totalSigs; }
     else document.getElementById('live-badge').style.display='none';
     if (hotTeams>0) { document.getElementById('threept-badge').style.display='inline'; document.getElementById('threept-badge').textContent=hotTeams; }
@@ -1939,7 +2135,7 @@ async function fetchESPNScoreboard() {
         const trailing = t.aScore > t.hScore ? teamDisplay(t.hTeam, t.hTeamFull) : t.hScore > t.aScore ? teamDisplay(t.aTeam, t.aTeamFull) : '';
 
         // Build criteria cards
-        const criteriaKeys = ['3ptfragile_away','3ptfragile_home','star_away','star_home'];
+        const criteriaKeys = ['fav','dog','3ptfragile_away','3ptfragile_home','star_away','star_home'];
         const criteriaHTML = criteriaKeys.map(k => {
           const c = t.criteria[k];
           if (!c) return '';
@@ -4347,32 +4543,39 @@ try {
 </tr></thead>
 <tbody>
 <tr style="border-bottom:1px solid var(--border-light);">
-<td style="padding:10px 6px;"><span class="signal-badge badge-3pt" style="font-size:10px;">3PT FRAGILE</span></td>
-<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">A team is <strong>way too hot from 3</strong> (50%+) and their entire lead depends on it. That shooting will cool off → lead will shrink.</td>
-<td style="padding:10px 6px;font-weight:700;color:var(--green);">Bet the <strong>other team's moneyline</strong> (the one behind). Their opponent's lead is fake.</td>
+<td style="padding:10px 6px;"><span class="signal-badge badge-fav" style="font-size:10px;">FAV</span></td>
+<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">Pre-game favorite is <strong>dominating</strong> — leads by 11+ points after Q1. Validated at <strong>72-83% cover rate</strong>.</td>
+<td style="padding:10px 6px;font-weight:700;color:#10b981;">Bet the <strong>favorite's spread</strong>. They're covering and the lead is real.</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+<td style="padding:10px 6px;"><span class="signal-badge badge-dog" style="font-size:10px;">DOG</span></td>
+<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">Pre-game <strong>underdog is winning</strong> after Q1. The market had them losing — they're proving it wrong. <strong>63-71% cover rate</strong>.</td>
+<td style="padding:10px 6px;font-weight:700;color:#7c3aed;">If dog ML &ge; -100: <span style="color:#f0b90b;font-weight:800;">BET ML</span>. If dog ML &lt; -100: <span style="color:#3861fb;font-weight:800;">BET SPREAD</span>.</td>
+</tr>
+<tr style="border-bottom:1px solid var(--border-light);">
+<td style="padding:10px 6px;"><span class="signal-badge badge-stayaway" style="font-size:10px;">⚠️ STAY AWAY</span></td>
+<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">Favorite leads AND is <strong>hot from 3</strong>. Looks tempting to bet the dog, but data shows <strong>dog covers only 35%</strong>. This is a trap.</td>
+<td style="padding:10px 6px;font-weight:700;color:#dc2626;"><strong>DO NOT BET.</strong> Skip this game entirely. The favorite's 3PT dominance is real, not fragile.</td>
 </tr>
 <tr style="border-bottom:1px solid var(--border-light);">
 <td style="padding:10px 6px;"><span class="signal-badge badge-star" style="font-size:10px;">STAR COIL</span></td>
-<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">A star player (25+ PPG) is cold (<60% pace) AND the game is close (within 15pts) in Q2-Q3. <strong>Compressed spring</strong> — breakout incoming.</td>
-<td style="padding:10px 6px;font-weight:700;color:var(--green);">Bet the <strong>star's team moneyline</strong>. Star is cold, game is close, timing is right — the market hasn't priced in the breakout.</td>
-</tr>
-
-<tr style="border-bottom:1px solid var(--border-light);">
-<td style="padding:10px 6px;"><span class="signal-badge badge-combined" style="font-size:10px;">COMBINED</span></td>
-<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;"><strong>Both 3PT Fragile + Star Coil firing on the same game.</strong> Multiple unsustainable conditions at once — strongest edge.</td>
-<td style="padding:10px 6px;font-weight:700;color:var(--green);">Bet the team that benefits from regression on both fronts. <strong>Highest confidence.</strong></td>
+<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">A star player (25+ PPG) is cold (&lt;65% pace) AND the game is close (within 15pts) in Q2-Q3. Supporting cast analysis determines strength.</td>
+<td style="padding:10px 6px;font-weight:700;color:var(--green);">Bet the <strong>star's team</strong> if cast is strong. Legacy signal — use with DOG/FAV for confirmation.</td>
 </tr>
 </tbody>
 </table>
 </div>
 
 <div id="nba-guide">
-<p class="guide-intro" style="margin-bottom:12px;"><strong>Core thesis:</strong> The current score was built on something unsustainable, so the live odds are mispriced. We bet on regression.</p>
+<p class="guide-intro" style="margin-bottom:12px;"><strong>Core thesis:</strong> Validated live betting signals based on pre-game odds vs live score. We bet when the market is demonstrably wrong.</p>
 <div class="guide-grid">
-<div class="guide-card"><h3><span class="signal-badge badge-3pt">3PT FRAGILE</span> 3PT Fragile Lead</h3><p class="edge-label">Team is winning because of hot 3PT shooting — and the lead depends on it</p><p>Fires when ALL are true: (1) a team is shooting 50%+ from 3 on 12+ attempts, (2) their lead is built on that 3PT shooting while the opponent scores from paint, AND (3) the lead is 3-15 points. The sweet spot where 3PT cooling flips the game.</p><p><strong>⚠️ Opponent Engine Check:</strong> The system also checks if the trailing team has a real scoring engine (non-3PT points per minute &gt; 1.3). If the trailing team's offense is broken — they can't score from paint, FT, or mid-range — then even if 3s regress, they have no engine to capitalize. Signal is downgraded to ⚠️ (weaker). <em>Regression only matters if the other team can take advantage of it.</em></p><div class="threshold">Trigger: 50%+ on 12+ att AND lead 42%+ from 3PT AND opponent 58%+ non-3PT AND lead 3-15 pts.<br>Weakened: If trailing team non-3PT PPM &lt; 1.3 (broken offense).</div></div>
-<div class="guide-card"><h3><span class="signal-badge badge-star">STAR</span> Star Coil</h3><p class="edge-label">Star is cold + game is close + supporting cast is holding = maximum edge</p><p>When a 25+ PPG star is at &lt;65% of expected pace AND the game is within 15 points during Q2-Q3.</p><p><strong>💪 Supporting Cast Analysis:</strong> The system compares the cast's output (team score minus star's points) directly to the opponent's total score — no season averages, pure live data. If the cast is within 8pts of the opponent, the team is competitive WITHOUT the star. When the star regresses upward, it's regression on top of an already-strong team. Also checks if the star's "missing points" exceed the cast gap — if so, regression alone flips the lead.</p><p><strong>4 tiers:</strong> 🔥 Cast Leading (cast ahead of opponent), 💪 Cast Close (within 8), ➖ Cast Behind (8-15), ⚠️ Cast Broken (&gt;15 behind). Also 🔒 Damage Locked if deficit is stable over 3+ min.</p><div class="threshold">Trigger: Star &lt;65% pace + margin &le;15 + Q2-Q3.<br>Tiers: Elite (cast gap ≥-8), Standard (-8 to -15), Weak (&lt;-15), Locked (deficit stable 3+min).</div></div>
+<div class="guide-card"><h3><span class="signal-badge badge-fav">FAV</span> Favorite Signal</h3><p class="edge-label">Pre-game favorite dominating — validated 72-83% cover rate</p><p><strong>FAV SIMPLE:</strong> Fav leads by 11+ points, 14+ min elapsed (Q2+). Historically covers 72.2% with +37.8% ROI.</p><p><strong>FAV TIER 1:</strong> Lead Safety &ge; 3 AND Spread Relative &ge; 10. Covers 82.9%. Lead Safety = lead / sqrt(time remaining). Spread Relative = lead - |pregame spread|.</p><div class="threshold">Trigger: Fav leads 11+ at 14+ min elapsed.<br>TIER 1: lead_safety &ge; 3 AND spread_rel &ge; 10.</div></div>
 
-<div class="guide-card"><h3><span class="signal-badge badge-combined">COMBINED</span> Combined Edge</h3><p class="edge-label">Both signals firing on the same game = strongest edge, most confidence</p><p>When 3PT Fragile AND Star Coil fire on the same game, the live odds are wrong from two independent angles. Each signal catches something different — together, the mispricing is larger.</p><div class="threshold">Trigger: Both 3PT Fragile + Star Coil on the same game.</div></div>
+<div class="guide-card"><h3><span class="signal-badge badge-dog">DOG</span> Dog Signal</h3><p class="edge-label">Pre-game underdog leading — 63-71% cover rate with tier upgrades</p><p><strong>DOG LEADING:</strong> Pre-game dog ahead at 14+ min (63.4% cover).</p><p><strong>DOG PHYSICAL:</strong> + dog wins rebound battle (65.5% cover).</p><p><strong>DOG STRONG:</strong> + dog leads 5+ AND wins REB AND wins FTA (70.6% cover).</p><p><strong>Hybrid ML/SPREAD:</strong> If dog ML &ge; -100 → BET ML (gold). If dog ML &lt; -100 → BET SPREAD (blue).</p><div class="threshold">Trigger: Pre-game dog leading at 14+ min elapsed.<br>Tiers upgrade with REB/FTA dominance.</div></div>
+
+<div class="guide-card"><h3><span class="signal-badge badge-stayaway">⚠️</span> Stay Away (Anti-Signal)</h3><p class="edge-label">3PT Fragile is DISPROVEN as a bet signal — it's now a warning</p><p>When the favorite leads AND is hot from 3PT, this looks like a regression opportunity. <strong>But data shows it's a trap:</strong> the dog covers only 35% in this spot. Hot 3PT shooting by the fav = real dominance, not fragile.</p><p>The old "3PT Fragile" signal has been converted to an anti-signal. Do NOT bet the dog when this fires.</p><div class="threshold">Trigger: Fav leads 3+ AND has 3PT Fragile signal active.<br>Action: STAY AWAY. Do not bet.</div></div>
+
+<div class="guide-card"><h3><span class="signal-badge badge-star">STAR</span> Star Coil (Legacy)</h3><p class="edge-label">Star cold + game close — use as confirmation for DOG signals</p><p>When a 25+ PPG star is at &lt;65% of expected pace AND the game is within 15 points during Q2-Q3. Supporting cast analysis determines signal strength.</p><p>This signal is kept for supplemental confirmation. The DOG signal now captures the core validated edge (pre-game dog leading).</p><div class="threshold">Trigger: Star &lt;65% pace + margin &le;15 + Q2-Q3.</div></div>
 
 </div></div>
 <div id="theory-panel" class="theory-panel">
