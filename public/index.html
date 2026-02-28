@@ -495,12 +495,6 @@
         <div class="chip-desc">Pre-game dog leading — bet dog ML/spread</div>
         <div class="chip-detail-panel" id="chip-detail-dog"></div>
       </div>
-      <div class="signal-chip signal-chip-clickable" onclick="toggleSignalDetail('stayaway')" style="border-left:3px solid #dc2626;">
-        <div class="chip-value" id="live-stayaway-signals" style="color:#dc2626;">0</div>
-        <div class="chip-label">STAY AWAY</div>
-        <div class="chip-desc">Fav hot from 3 — dog only covers 35%</div>
-        <div class="chip-detail-panel" id="chip-detail-stayaway"></div>
-      </div>
     </div>
 
 <!-- QUICK BET ACTION CARDS -->
@@ -762,7 +756,7 @@
     <div class="form-grid">
       <div class="form-group"><label>Game</label><input type="text" id="modal-game" /></div>
       <div class="form-group"><label>Side</label><input type="text" id="modal-side" /></div>
-      <div class="form-group"><label>Strategy</label><select id="modal-strategy"><option>Mean Reversion</option><option>3PT Fragile</option><option>Star Coil</option><option>Combined Edge</option></select></div>
+      <div class="form-group"><label>Strategy</label><select id="modal-strategy"><option>Mean Reversion</option><option>Star Coil</option><option>Combined Edge</option></select></div>
       <div class="form-group"><label>Line / Price</label><input type="text" id="modal-price" /></div>
       <div class="form-group"><label>Units</label><input type="number" id="modal-units" value="1" step="0.5" min="0.5" max="2" /></div>
       <div class="form-group"><label>Notes</label><input type="text" id="modal-notes" /></div>
@@ -995,7 +989,6 @@ function sendSignalNotification(title, body, gameId, signalType) {
   localStorage.setItem('notifiedSignals', JSON.stringify([...notifiedSignals]));
   // Play pleasant chime for new signals
   if (signalType.startsWith('star_')) playAlertSound('coil');
-  else if (signalType.startsWith('3ptfragile')) playAlertSound('hot3pt');
   // Send email/phone alert via serverless API (silent fail if not configured)
   fetch('/api/alerts', {
     method: 'POST',
@@ -1031,7 +1024,7 @@ function toggleSignalDetail(type) {
 
   // Build panel content from stored signal games
   const games = window._signalGames ? window._signalGames[type] : [];
-  const labels = { '3ptfragile': '3PT Fragile', 'star': 'Star Coil', 'combined': 'Combined Edge', 'fav': 'FAV Signal', 'dog': 'DOG Signal', 'stayaway': 'STAY AWAY' };
+  const labels = { 'star': 'Star Coil', 'combined': 'Combined Edge', 'fav': 'FAV Signal', 'dog': 'DOG Signal' };
 
   if (!games || games.length === 0) {
     panel.innerHTML = `<div class="chip-detail-header">${labels[type] || type} Games</div><div class="chip-detail-empty">No active ${labels[type] || ''} signals right now</div>`;
@@ -1386,11 +1379,11 @@ async function fetchESPNScoreboard() {
       return;
     }
 
-    let sig3Fragile=0, sigStar=0, sigCombined=0, hotTeams=0, warmTeams=0;
-    let sigFav=0, sigDog=0, sigStayAway=0;
+    let sigStar=0, sigCombined=0, hotTeams=0, warmTeams=0;
+    let sigFav=0, sigDog=0;
     let cards='', tpCards='', gameTheses=[];
     // Per-signal game tracking for chip click-to-expand
-    let signalGames = { '3ptfragile': [], 'star': [], 'combined': [], 'fav': [], 'dog': [], 'stayaway': [] };
+    let signalGames = { 'star': [], 'combined': [], 'fav': [], 'dog': [] };
 
     for (const event of liveEvents) {
       const comp = event.competitions?.[0]; if (!comp) continue;
@@ -1444,7 +1437,7 @@ async function fetchESPNScoreboard() {
       let thesis = { game: gLabel, gameFull: gLabelFull, aTeam: aA, hTeam: hA, aTeamFull: aFull, hTeamFull: hFull, aScore: aS, hScore: hS, per, clk, detail, criteria: {}, betSide: '', betSideFull: '', betLogic: '', signals: [] };
 
       if (isLive) {
-        // 3PT CHECK — evaluate shooting stats (used as input for 3PT Fragile signal)
+        // 3PT CHECK — evaluate shooting stats (used by 3PT Tracker)
         const chk3 = (p,m,a,t,side,tFull) => {
           const pn=parseFloat(p), an=parseInt(a), mn=parseInt(m);
           const tD = teamDisplay(t, tFull);
@@ -1453,111 +1446,13 @@ async function fetchESPNScoreboard() {
           if (isHot) {
             fire3PTAlert(t, pn.toFixed(0), mn, an, gLabel, per, clk); hotTeams++;
           } else if (isWarm) { warmTeams++; }
-          // NOTE: 3PT alone no longer fires as a level 2 signal.
-          // It will be combined with Fragile Lead below into "3PT Fragile"
+          // NOTE: 3PT tracking for the 3PT Tracker tab only — not a bet signal
           return { isHot, isWarm, pn, an, mn, tD };
         };
         const a3Check = chk3(a3P,a3M,a3A,aA,'away',aFull), h3Check = chk3(h3P,h3M,h3A,hA,'home',hFull);
 
-        // FRAGILE LEAD CHECK — evaluate lead composition (used as input for 3PT Fragile signal)
-        const aDur = analyzeScoringDurability(aA, aS, a3M, hS);
-        const hDur = analyzeScoringDurability(hA, hS, h3M, aS);
-        let aFragileData = null, hFragileData = null;
-        if (aS > hS && aDur.pct3 >= getFragile3PtThreshold() && aS >= 20) {
-          const hNon3Pct = hS > 0 ? ((hS - (parseInt(h3M)||0)*3) / hS * 100) : 0;
-          if (hNon3Pct >= 58) aFragileData = { pct3: aDur.pct3, oppPaintPct: hNon3Pct };
-        }
-        if (hS > aS && hDur.pct3 >= getFragile3PtThreshold() && hS >= 20) {
-          const aNon3Pct = aS > 0 ? ((aS - (parseInt(a3M)||0)*3) / aS * 100) : 0;
-          if (aNon3Pct >= 58) hFragileData = { pct3: hDur.pct3, oppPaintPct: aNon3Pct };
-        }
-
-        // ========== 3PT FRAGILE SIGNAL — fires ONLY when BOTH conditions are met ==========
-        // Condition 1: Team shooting hot from 3 (50%+ on 12+ att or 55%+ on 8+ att)
-        // Condition 2: Their lead is fragile (3PT-heavy) AND trailing team scores from paint
+        // Team display labels (used by Star Coil narrative below)
         const _aD = teamDisplay(aA, aFull), _hD = teamDisplay(hA, hFull);
-
-        // ===== OPPONENT ENGINE CHECK =====
-        // Can the trailing team actually capitalize if 3PT regression happens?
-        // Compute non-3PT points per minute for each team (paint + FT + mid-range)
-        const _gMinsNow = getElapsedMinutes(per, clk) || 1;
-        const aNon3Pts = aS - (parseInt(a3M)||0)*3;
-        const hNon3Pts = hS - (parseInt(h3M)||0)*3;
-        const aNon3Ppm = aNon3Pts / _gMinsNow;  // away non-3PT points per minute
-        const hNon3Ppm = hNon3Pts / _gMinsNow;  // home non-3PT points per minute
-        // League avg ~1.8-2.0 non-3PT ppm. Below 1.3 = broken offense, can't capitalize on regression.
-        const NO_ENGINE_THRESHOLD = 1.3;
-
-        // Away team: both hot 3PT AND fragile lead
-        const awayLead = aS - hS;
-        // If away leads with fragile 3s, check if HOME (trailing) has enough non-3PT engine to capitalize
-        const hNoEngine = awayLead > 0 && hNon3Ppm < NO_ENGINE_THRESHOLD && _gMinsNow >= 10;
-        const hEngineLabel = hNoEngine ? ` ⚠️ BUT ${_hD} has no scoring engine (${hNon3Ppm.toFixed(1)} non-3PT PPM) — may not capitalize even if 3s regress` : '';
-
-        if (a3Check.isHot && aFragileData && awayLead >= 3 && awayLead <= 15) {
-          const fragileStrength = hNoEngine ? 'weakened' : 'strong';
-          signals.push({type:'3ptFragile', text:`${_aD} 3PT FRAGILE: shooting ${a3Check.pn.toFixed(0)}% from 3 (${a3Check.mn}/${a3Check.an}) AND lead is ${aFragileData.pct3.toFixed(0)}% 3PT-dependent. Lead: ${awayLead}pts. ${_hD} scores from paint (${aFragileData.oppPaintPct.toFixed(0)}%).${hNoEngine ? ' ⚠️ BUT trailing team has weak scoring engine — regression may not flip result.' : ' Classic fade.'}`, level:2});
-          sig3Fragile++;
-          sendSignalNotification('🔥 3PT Fragile: ' + _aD + (hNoEngine ? ' (⚠️ weak opponent engine)' : ''), aA + ' shooting ' + a3Check.pn.toFixed(0) + '% from 3 AND lead is fragile (' + awayLead + 'pts)' + (hNoEngine ? '. But trailing team offense is broken — regression may not matter.' : ''), gid, '3ptfragile_away');
-          if (!state.signalFirstSeen[gid]) state.signalFirstSeen[gid] = Date.now();
-          const engineDetail = hNoEngine
-            ? `<br><strong>⚠️ Opponent Engine Check:</strong> ${_hD} is producing only ${hNon3Ppm.toFixed(1)} non-3PT points/min (threshold: ${NO_ENGINE_THRESHOLD}). Their offense is broken beyond just 3PT variance — even if ${_aD}'s 3s cool down, ${_hD} may not have the scoring engine to capitalize. <strong>Signal is weaker.</strong>`
-            : `<br><strong>✅ Opponent Engine:</strong> ${_hD} is producing ${hNon3Ppm.toFixed(1)} non-3PT points/min — they have a real scoring engine from paint/FT/mid-range. When ${_aD}'s 3s regress, ${_hD} can capitalize.`;
-          thesis.criteria['3ptfragile_away'] = {met:true, strong:!hNoEngine, label:`${_aD} 3PT Fragile Lead${hNoEngine?' ⚠️':''}`, detail:`<strong>3PT Shooting:</strong> ${_aD} is shooting ${a3Check.pn.toFixed(0)}% from 3 on ${a3Check.an} attempts (${getLeagueName()} avg: ${getLeague3PtAvg()}%).<br><strong>Lead Composition:</strong> ${aFragileData.pct3.toFixed(0)}% of ${_aD}'s scoring comes from 3PT (threshold: ${getFragile3PtThreshold()}%).<br><strong>Score Margin:</strong> ${awayLead} pts — in the 3-15pt sweet spot where regression flips the game.<br><strong>Opponent Durability:</strong> ${_hD} has ${aFragileData.oppPaintPct.toFixed(0)}% non-3PT scoring — paint-heavy and sustainable.${engineDetail}<br><strong>Signal:</strong> ${hNoEngine ? 'Hot 3PT + fragile lead detected, but trailing team\'s offense is too weak to exploit regression. Proceed with caution.' : 'Hot 3PT + fragile lead + competitive margin. When shooting cools, lead evaporates.'}`, value:`${a3Check.pn.toFixed(0)}% 3PT + ${aFragileData.pct3.toFixed(0)}% fragile | Lead: ${awayLead}${hNoEngine?' ⚠️':''}`};
-        } else if (a3Check.isHot && aFragileData && awayLead > 15) {
-          // Hot + fragile but blowout — too large a margin for reliable fade
-          signals.push({type:'3ptFragile', text:`${_aD} 3PT fragile but lead too large (${awayLead}pts) — blowout territory.`, level:1});
-          thesis.criteria['3ptfragile_away'] = {met:true, strong:false, label:`${_aD} 3PT Fragile (Blowout)`, detail:`${_aD} has a fragile 3PT lead (${aFragileData.pct3.toFixed(0)}% from 3PT) but the ${awayLead}pt margin is too large. Signal needs 3-15pt lead to fire. Even if 3PT% regresses, blowout margin provides too much cushion.`, value:`${awayLead}pt lead — too wide`, warn:true};
-        } else if (a3Check.isHot && aFragileData && awayLead < 3) {
-          // Hot + fragile but lead too small — not enough edge
-          signals.push({type:'3ptFragile', text:`${_aD} shooting hot (${a3Check.pn.toFixed(0)}%) + fragile lead but only ${awayLead}pt lead — needs 3+ pts.`, level:1});
-          thesis.criteria['3ptfragile_away'] = {met:true, strong:false, label:`${_aD} 3PT Fragile (Tight)`, detail:`${_aD} has both conditions but only a ${awayLead}pt lead. Signal needs 3-15pt margin to ensure meaningful edge from 3PT regression.`, value:`${awayLead}pt lead — too tight`, warn:true};
-        } else if (a3Check.isHot && !aFragileData) {
-          // Hot shooting but lead not fragile enough — informational only
-          signals.push({type:'3ptFragile', text:`${_aD} shooting hot: ${a3Check.pn.toFixed(0)}% from 3 (${a3Check.mn}/${a3Check.an}) — but lead not fragile enough for full signal.`, level:1});
-          thesis.criteria['3ptfragile_away'] = {met:true, strong:false, label:`${_aD} 3PT Hot (no fragile lead)`, detail:`${_aD} is shooting ${a3Check.pn.toFixed(0)}% from 3 on ${a3Check.an} attempts — elevated, but the lead composition isn't fragile enough (needs 3PT-heavy lead vs paint-heavy opponent). Monitoring only.`, value:`${a3Check.pn.toFixed(0)}% 3PT`, warn:true};
-        } else if (!a3Check.isHot && aFragileData) {
-          // Fragile lead but shooting not extreme — informational only
-          thesis.criteria['3ptfragile_away'] = {met:true, strong:false, label:`${_aD} Fragile Lead (not hot enough)`, detail:`${_aD}'s lead is ${aFragileData.pct3.toFixed(0)}% from 3PT — fragile composition detected, but current 3PT shooting rate isn't extreme enough to trigger. Needs 50%+ on 12+ attempts.`, value:`${aFragileData.pct3.toFixed(0)}% fragile`, warn:true};
-        } else if (a3Check.isWarm) {
-          signals.push({type:'3ptFragile', text:`${_aD} ${a3Check.pn.toFixed(0)}% from 3 (${a3Check.mn}/${a3Check.an}) — elevated, watch for increase.`, level:1});
-          thesis.criteria['3ptfragile_away'] = {met:false, label:`${_aD} 3PT: ${a3Check.pn.toFixed(0)}%`, detail:`Elevated but no fragile lead. Both conditions needed.`, value:'Watching'};
-        } else {
-          thesis.criteria['3ptfragile_away'] = {met:false, label:`${_aD} 3PT Fragile`, detail:`No 3PT fragile signal. Normal shooting range and/or no fragile lead composition.`, value:'N/A'};
-        }
-
-        // Home team: both hot 3PT AND fragile lead
-        const homeLead = hS - aS;
-        // If home leads with fragile 3s, check if AWAY (trailing) has enough non-3PT engine to capitalize
-        const aNoEngine = homeLead > 0 && aNon3Ppm < NO_ENGINE_THRESHOLD && _gMinsNow >= 10;
-        const aEngineLabel = aNoEngine ? ` ⚠️ BUT ${_aD} has no scoring engine (${aNon3Ppm.toFixed(1)} non-3PT PPM) — may not capitalize even if 3s regress` : '';
-
-        if (h3Check.isHot && hFragileData && homeLead >= 3 && homeLead <= 15) {
-          signals.push({type:'3ptFragile', text:`${_hD} 3PT FRAGILE: shooting ${h3Check.pn.toFixed(0)}% from 3 (${h3Check.mn}/${h3Check.an}) AND lead is ${hFragileData.pct3.toFixed(0)}% 3PT-dependent. Lead: ${homeLead}pts. ${_aD} scores from paint (${hFragileData.oppPaintPct.toFixed(0)}%).${aNoEngine ? ' ⚠️ BUT trailing team has weak scoring engine — regression may not flip result.' : ' Classic fade.'}`, level:2});
-          sig3Fragile++;
-          sendSignalNotification('🔥 3PT Fragile: ' + _hD + (aNoEngine ? ' (⚠️ weak opponent engine)' : ''), hA + ' shooting ' + h3Check.pn.toFixed(0) + '% from 3 AND lead is fragile (' + homeLead + 'pts)' + (aNoEngine ? '. But trailing team offense is broken — regression may not matter.' : ''), gid, '3ptfragile_home');
-          if (!state.signalFirstSeen[gid]) state.signalFirstSeen[gid] = Date.now();
-          const hEngineDetail = aNoEngine
-            ? `<br><strong>⚠️ Opponent Engine Check:</strong> ${_aD} is producing only ${aNon3Ppm.toFixed(1)} non-3PT points/min (threshold: ${NO_ENGINE_THRESHOLD}). Their offense is broken beyond just 3PT variance — even if ${_hD}'s 3s cool down, ${_aD} may not have the scoring engine to capitalize. <strong>Signal is weaker.</strong>`
-            : `<br><strong>✅ Opponent Engine:</strong> ${_aD} is producing ${aNon3Ppm.toFixed(1)} non-3PT points/min — they have a real scoring engine from paint/FT/mid-range. When ${_hD}'s 3s regress, ${_aD} can capitalize.`;
-          thesis.criteria['3ptfragile_home'] = {met:true, strong:!aNoEngine, label:`${_hD} 3PT Fragile Lead${aNoEngine?' ⚠️':''}`, detail:`<strong>3PT Shooting:</strong> ${_hD} is shooting ${h3Check.pn.toFixed(0)}% from 3 on ${h3Check.an} attempts (${getLeagueName()} avg: ${getLeague3PtAvg()}%).<br><strong>Lead Composition:</strong> ${hFragileData.pct3.toFixed(0)}% of ${_hD}'s scoring comes from 3PT (threshold: ${getFragile3PtThreshold()}%).<br><strong>Score Margin:</strong> ${homeLead} pts — in the 3-15pt sweet spot where regression flips the game.<br><strong>Opponent Durability:</strong> ${_aD} has ${hFragileData.oppPaintPct.toFixed(0)}% non-3PT scoring — paint-heavy and sustainable.${hEngineDetail}<br><strong>Signal:</strong> ${aNoEngine ? 'Hot 3PT + fragile lead detected, but trailing team\'s offense is too weak to exploit regression. Proceed with caution.' : 'Hot 3PT + fragile lead + competitive margin. When shooting cools, lead evaporates.'}`, value:`${h3Check.pn.toFixed(0)}% 3PT + ${hFragileData.pct3.toFixed(0)}% fragile | Lead: ${homeLead}${aNoEngine?' ⚠️':''}`};
-        } else if (h3Check.isHot && hFragileData && homeLead > 15) {
-          signals.push({type:'3ptFragile', text:`${_hD} 3PT fragile but lead too large (${homeLead}pts) — blowout territory.`, level:1});
-          thesis.criteria['3ptfragile_home'] = {met:true, strong:false, label:`${_hD} 3PT Fragile (Blowout)`, detail:`${_hD} has a fragile 3PT lead (${hFragileData.pct3.toFixed(0)}% from 3PT) but the ${homeLead}pt margin is too large. Signal needs 3-15pt lead to fire. Even if 3PT% regresses, blowout margin provides too much cushion.`, value:`${homeLead}pt lead — too wide`, warn:true};
-        } else if (h3Check.isHot && hFragileData && homeLead < 3) {
-          signals.push({type:'3ptFragile', text:`${_hD} shooting hot (${h3Check.pn.toFixed(0)}%) + fragile lead but only ${homeLead}pt lead — needs 3+ pts.`, level:1});
-          thesis.criteria['3ptfragile_home'] = {met:true, strong:false, label:`${_hD} 3PT Fragile (Tight)`, detail:`${_hD} has both conditions but only a ${homeLead}pt lead. Signal needs 3-15pt margin to ensure meaningful edge from 3PT regression.`, value:`${homeLead}pt lead — too tight`, warn:true};
-        } else if (h3Check.isHot && !hFragileData) {
-          signals.push({type:'3ptFragile', text:`${_hD} shooting hot: ${h3Check.pn.toFixed(0)}% from 3 (${h3Check.mn}/${h3Check.an}) — but lead not fragile enough for full signal.`, level:1});
-          thesis.criteria['3ptfragile_home'] = {met:true, strong:false, label:`${_hD} 3PT Hot (no fragile lead)`, detail:`${_hD} is shooting ${h3Check.pn.toFixed(0)}% from 3 on ${h3Check.an} attempts — elevated, but the lead composition isn't fragile enough. Monitoring only.`, value:`${h3Check.pn.toFixed(0)}% 3PT`, warn:true};
-        } else if (!h3Check.isHot && hFragileData) {
-          thesis.criteria['3ptfragile_home'] = {met:true, strong:false, label:`${_hD} Fragile Lead (not hot enough)`, detail:`${_hD}'s lead is ${hFragileData.pct3.toFixed(0)}% from 3PT — fragile composition detected, but 3PT shooting rate isn't extreme enough. Needs 50%+ on 12+ attempts.`, value:`${hFragileData.pct3.toFixed(0)}% fragile`, warn:true};
-        } else if (h3Check.isWarm) {
-          signals.push({type:'3ptFragile', text:`${_hD} ${h3Check.pn.toFixed(0)}% from 3 (${h3Check.mn}/${h3Check.an}) — elevated, watch for increase.`, level:1});
-          thesis.criteria['3ptfragile_home'] = {met:false, label:`${_hD} 3PT: ${h3Check.pn.toFixed(0)}%`, detail:`Elevated but no fragile lead. Both conditions needed.`, value:'Watching'};
-        } else {
-          thesis.criteria['3ptfragile_home'] = {met:false, label:`${_hD} 3PT Fragile`, detail:`No 3PT fragile signal. Normal shooting and/or no fragile lead composition.`, value:'N/A'};
-        }
 
         // STAR COIL CHECK — Star cold (<60% pace) + competitive game (within 15 pts) + Q2-Q3 only
         const cM = parseFloat(clk?.split(':')[0]||12), cS = parseFloat(clk?.split(':')[1]||0);
@@ -1688,15 +1583,6 @@ async function fetchESPNScoreboard() {
         const favLeadAmt = favScore - dogScore;
         const dogLeadAmt = dogScore - favScore;
 
-        // ===== STAY AWAY SIGNAL (anti-signal) =====
-        // When fav leads + hot 3pt → dog covers only 35%, STAY AWAY
-        const has3ptFragileL2 = signals.some(s => s.type === '3ptFragile' && s.level === 2);
-        if (has3ptFragileL2 && favSide && favLeading && favLeadAmt >= 3) {
-          signals.push({type:'stayaway', text:`⚠️ STAY AWAY — ${favAbbr} leads ${favLeadAmt}pts + hot from 3. Dog covers only 35% in this spot. Do NOT bet ${dogAbbr}.`, level:2});
-          sigStayAway++;
-          sendSignalNotification('⚠️ STAY AWAY: ' + gLabel, favAbbr + ' hot from 3 + leading. Dog covers only 35%.', gid, 'stayaway');
-        }
-
         // ===== FAV SIGNALS =====
         if (favSide && _elapsed >= 14 && favLeading) {
           const _timeRem = 48 - _elapsed;
@@ -1758,39 +1644,28 @@ async function fetchESPNScoreboard() {
         }
 
         // COMBINED - 2+ independent signals on same game
-        const has3ptFragile=signals.some(s=>s.type==='3ptFragile'&&s.level===2);
         const hasStar=signals.some(s=>s.type==='star'&&s.level===2);
         const hasFav=signals.some(s=>s.type==='fav'&&s.level===2);
         const hasDog=signals.some(s=>s.type==='dog'&&s.level===2);
-        const hasStayAway=signals.some(s=>s.type==='stayaway'&&s.level===2);
-        const activeBetSignals = [has3ptFragile, hasStar, hasFav, hasDog].filter(Boolean).length;
+        const activeBetSignals = [hasStar, hasFav, hasDog].filter(Boolean).length;
         if (activeBetSignals >= 2) { signalLevel=2; sigCombined++; }
         else if (hasFav || hasDog) signalLevel=2;
         else if (activeBetSignals === 1) signalLevel=1;
-        // Stay away overrides: if stay away fires, suppress bet signals for dog side
-        if (hasStayAway && !hasFav && !hasDog) signalLevel = Math.max(signalLevel, 1);
 
         // Track which games have which signals for chip click-to-expand
         const _gameInfo = { game: gLabel, gameFull: gLabelFull, aScore: aS, hScore: hS, per, clk, detail, eventId: gid };
-        if (has3ptFragile) signalGames['3ptfragile'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='3ptFragile'&&s.level===2).map(s=>s.text).join('; ') });
         if (hasStar) signalGames['star'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='star'&&s.level===2).map(s=>s.text).join('; ') });
         if (hasFav) signalGames['fav'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='fav'&&s.level===2).map(s=>s.text).join('; ') });
         if (hasDog) signalGames['dog'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='dog'&&s.level===2).map(s=>s.text).join('; ') });
-        if (hasStayAway) signalGames['stayaway'].push({ ..._gameInfo, sigDetail: signals.filter(s=>s.type==='stayaway'&&s.level===2).map(s=>s.text).join('; ') });
         if (activeBetSignals >= 2) signalGames['combined'].push({ ..._gameInfo, sigDetail: `${activeBetSignals} signals active` });
 
         // Determine bet side and build thesis logic
         if (signalLevel >= 2) {
           // Figure out which team to bet ON (the one that benefits from regression)
           let betTeam = '', fadeTeam = '', reasons = [];
-          const a3F = thesis.criteria['3ptfragile_away'], h3F = thesis.criteria['3ptfragile_home'];
 
           // Score each side: who has unsustainable advantages?
           let awayFade=0, homeFade=0;
-          if (a3F?.met && a3F?.strong) awayFade++;  // away has 3PT fragile lead + trailing team can capitalize = fade away
-          if (h3F?.met && h3F?.strong) homeFade++;  // home has 3PT fragile lead + trailing team can capitalize = fade home
-          // 3PT Fragile fired but trailing team has no engine = weaker signal, don't count as full fade
-          // (a3F/h3F.strong is already false when noEngine, so the above won't increment — correct)
 
           // Star Coil: bet direction depends on tier
           //   ELITE (cast strong): strong bet ON star's team (fade opponent) — 1.5 weight
@@ -1820,13 +1695,8 @@ async function fetchESPNScoreboard() {
           else { betTeam = aS < hS ? aA : hA; fadeTeam = aS < hS ? hA : aA; }
 
           // Build the narrative — use full names for clarity
-          // NOTE: _aD and _hD already declared above in 3PT Fragile section
           if (_favCrit?.met) reasons.push(`✅ FAV signal: ${favAbbr} leads ${favLeadAmt}pts — validated ${_favCrit.value}.`);
           if (_dogCrit?.met) reasons.push(`🐕 DOG signal: ${dogAbbr} (pre-game dog) is winning — validated ${_dogCrit.value}.`);
-          if (a3F?.met && a3F?.strong) reasons.push(`${_aD} has a 3PT Fragile Lead — shooting hot from 3 AND lead depends on it (${a3F.value}). ${_hD} has the engine to capitalize.`);
-          if (a3F?.met && !a3F?.strong && a3Check.isHot && aFragileData) reasons.push(`${_aD} has 3PT Fragile Lead but ${_hD}'s offense is broken (${hNon3Ppm.toFixed(1)} non-3PT PPM) — regression may not flip the result. Weaker signal.`);
-          if (h3F?.met && h3F?.strong) reasons.push(`${_hD} has a 3PT Fragile Lead — shooting hot from 3 AND lead depends on it (${h3F.value}). ${_aD} has the engine to capitalize.`);
-          if (h3F?.met && !h3F?.strong && h3Check.isHot && hFragileData) reasons.push(`${_hD} has 3PT Fragile Lead but ${_aD}'s offense is broken (${aNon3Ppm.toFixed(1)} non-3PT PPM) — regression may not flip the result. Weaker signal.`);
           if (aStarCoil?.coilTier === 'elite') reasons.push(`💪 ${aStarCoil.name} (${_aD}) is coiled. Cast: ${aStarCoil.cast.castScore}pts vs opp (gap: ${aStarCoil.cast.castGap > 0 ? '+' : ''}${aStarCoil.cast.castGap}).${aStarCoil.cast.regressionFlips ? ' Star regression alone flips the lead.' : ' Cast is holding — star regression = surge.'} Strongest edge.`);
           else if (aStarCoil?.coilTier === 'standard') reasons.push(`🌀 ${aStarCoil.name} (${_aD}) is coiled. Cast gap: ${aStarCoil.cast.castGap}. Standard edge.`);
           else if (aStarCoil?.coilTier === 'locked') reasons.push(`🔒 ${aStarCoil.name} (${_aD}) is coiled BUT damage locked — deficit baked in. Fade ${_aD}.`);
@@ -1910,8 +1780,8 @@ async function fetchESPNScoreboard() {
 
       // Signal summary for card header
       const sigSummary = signals.filter(s=>s.level===2).map(s => {
-        const icons = {'3ptFragile':'3PT','star':'STAR','fav':'FAV','dog':'DOG','stayaway':'⚠️','combined':'COMBO'};
-        const colors = {'fav':'#10b981','dog':'#7c3aed','stayaway':'#dc2626','3ptFragile':'#3b82f6','star':'#f59e0b'};
+        const icons = {'star':'STAR','fav':'FAV','dog':'DOG','combined':'COMBO'};
+        const colors = {'fav':'#10b981','dog':'#7c3aed','star':'#f59e0b'};
         const label = icons[s.type] || s.type.toUpperCase();
         const col = colors[s.type] || 'var(--accent)';
         return `<span style="background:${col};color:#fff;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">${label}</span>`;
@@ -1961,16 +1831,12 @@ async function fetchESPNScoreboard() {
             // Check for new validated signals
             const _hasFavSig=signals.some(s=>s.type==='fav'&&s.level===2);
             const _hasDogSig=signals.some(s=>s.type==='dog'&&s.level===2);
-            const _hasStayAwaySig=signals.some(s=>s.type==='stayaway'&&s.level===2);
             const _dogSig=signals.find(s=>s.type==='dog'&&s.level===2);
 
             let titleText,recDetail='',betBtn='';
 
-            // Priority: STAY AWAY > FAV > DOG > legacy signals
-            if (_hasStayAwaySig && !_hasFavSig && !_hasDogSig) {
-              titleText='⚠️ STAY AWAY';
-              recDetail=`<div style="font-size:11px;margin-top:4px;font-weight:700;color:#dc2626;">Dog covers only 35% when fav leads + hot 3PT. Do NOT bet the dog.</div>`;
-            } else if (_hasFavSig) {
+            // Priority: FAV > DOG > legacy signals
+            if (_hasFavSig) {
               const _favSig=signals.find(s=>s.type==='fav'&&s.level===2);
               titleText=`✅ FAV SIGNAL — BET ${favAbbr||''} SPREAD`;
               recDetail=`<div style="font-size:11px;margin-top:4px;font-weight:700;color:#10b981;">${_favSig?.text||''}</div>`;
@@ -1998,9 +1864,7 @@ async function fetchESPNScoreboard() {
 
             // Pick panel colors based on signal type
             let bgColor, borderColor, titleColor;
-            if (_hasStayAwaySig && !_hasFavSig && !_hasDogSig) {
-              bgColor='var(--red-light)'; borderColor='#dc2626'; titleColor='#dc2626';
-            } else if (_hasFavSig) {
+            if (_hasFavSig) {
               bgColor='var(--green-light)'; borderColor='#10b981'; titleColor='#10b981';
             } else if (_hasDogSig) {
               bgColor='var(--purple-light)'; borderColor=_dogSig?.betColor||'#7c3aed'; titleColor=_dogSig?.betColor||'#7c3aed';
@@ -2012,7 +1876,7 @@ async function fetchESPNScoreboard() {
 
             return `<div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:${bgColor};border-left:3px solid ${borderColor};">
               <div style="font-size:10px;font-weight:800;color:${titleColor};margin-bottom:4px;letter-spacing:0.5px;">${titleText}</div>
-              ${signals.filter(s=>s.type!=='fav'&&s.type!=='dog'&&s.type!=='stayaway').map(s=>`<div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">${s.level===2?'&#x1F525;':'&#x26A0;&#xFE0F;'} ${s.text}</div>`).join('')}
+              ${signals.filter(s=>s.type!=='fav'&&s.type!=='dog').map(s=>`<div style="font-size:11px;color:var(--text-secondary);line-height:1.5;">${s.level===2?'&#x1F525;':'&#x26A0;&#xFE0F;'} ${s.text}</div>`).join('')}
               ${recDetail}
               ${betBtn}
               ${state.signalFirstSeen[gid]?`<div style="font-size:9px;color:var(--text-muted);margin-top:4px;">\u23F1 ${Math.floor((Date.now()-state.signalFirstSeen[gid])/60000)}m ago</div>`:''}
@@ -2046,8 +1910,8 @@ async function fetchESPNScoreboard() {
       qbPanel.style.display = 'block';
       qbCards.innerHTML = gameTheses.map(t => {
         const sigs = t.signals.filter(s=>s.level===2).map(s => {
-          const badges = {'3ptFragile':'3PT','star':'STAR','fav':'FAV','dog':'DOG','stayaway':'⚠️ STAY AWAY'};
-          const bCls = {'fav':'fav','dog':'dog','stayaway':'stayaway','3ptFragile':'3pt','star':'star'};
+          const badges = {'star':'STAR','fav':'FAV','dog':'DOG'};
+          const bCls = {'fav':'fav','dog':'dog','star':'star'};
           return '<span class="signal-badge badge-' + (bCls[s.type]||s.type) + '">' + (badges[s.type]||s.type.toUpperCase()) + '</span>';
         }).join(' ');
         const oddsStr = t.marketOdds ? ' @ ' + (t.marketOdds > 0 ? '+' : '') + t.marketOdds : '';
@@ -2088,18 +1952,14 @@ async function fetchESPNScoreboard() {
       }
     });
 
-    // Update counts — new signal chips
+    // Update counts — signal chips
     const _favEl = document.getElementById('live-fav-signals');
     const _dogEl = document.getElementById('live-dog-signals');
-    const _stayEl = document.getElementById('live-stayaway-signals');
     if (_favEl) _favEl.textContent = sigFav;
     if (_dogEl) _dogEl.textContent = sigDog;
-    if (_stayEl) _stayEl.textContent = sigStayAway;
     // Legacy elements (keep for backwards compat if they exist)
-    const _3ptEl = document.getElementById('live-3ptfragile-signals');
     const _starEl = document.getElementById('live-star-signals');
     const _combEl = document.getElementById('live-combined-signals');
-    if (_3ptEl) _3ptEl.textContent = sig3Fragile;
     if (_starEl) _starEl.textContent = sigStar;
     if (_combEl) _combEl.textContent = sigCombined;
     // Glow effect on FAV/DOG chips when signals fire
@@ -2110,7 +1970,7 @@ async function fetchESPNScoreboard() {
     document.getElementById('threept-hot-count').textContent = hotTeams;
     document.getElementById('threept-warm-count').textContent = warmTeams;
 
-    const totalSigs = sigFav+sigDog+sigStayAway+sig3Fragile+sigStar;
+    const totalSigs = sigFav+sigDog+sigStar;
     if (totalSigs>0) { document.getElementById('live-badge').style.display='inline'; document.getElementById('live-badge').textContent=totalSigs; }
     else document.getElementById('live-badge').style.display='none';
     if (hotTeams>0) { document.getElementById('threept-badge').style.display='inline'; document.getElementById('threept-badge').textContent=hotTeams; }
@@ -2135,7 +1995,7 @@ async function fetchESPNScoreboard() {
         const trailing = t.aScore > t.hScore ? teamDisplay(t.hTeam, t.hTeamFull) : t.hScore > t.aScore ? teamDisplay(t.aTeam, t.aTeamFull) : '';
 
         // Build criteria cards
-        const criteriaKeys = ['fav','dog','3ptfragile_away','3ptfragile_home','star_away','star_home'];
+        const criteriaKeys = ['fav','dog','star_away','star_home'];
         const criteriaHTML = criteriaKeys.map(k => {
           const c = t.criteria[k];
           if (!c) return '';
@@ -3086,7 +2946,7 @@ function playAlertSound(type) {
     // Soft harmonic shimmer on top
     playNote(ctx, 1046.5, t + 0.3, 0.4, 0.04, 'sine');   // C6 (octave shimmer)
   } else if (type === 'hot3pt') {
-    // 3PT Fragile — two-tone notification (D5 → A5, clean and crisp)
+    // 3PT alert — two-tone notification (D5 → A5, clean and crisp)
     playNote(ctx, 587.33, t, 0.25, 0.12, 'sine');         // D5
     playNote(ctx, 880.00, t + 0.15, 0.4, 0.10, 'sine');   // A5
     playNote(ctx, 1174.66, t + 0.25, 0.3, 0.04, 'sine');  // D6 shimmer
@@ -4553,11 +4413,6 @@ try {
 <td style="padding:10px 6px;font-weight:700;color:#7c3aed;">If dog ML &ge; -100: <span style="color:#f0b90b;font-weight:800;">BET ML</span>. If dog ML &lt; -100: <span style="color:#3861fb;font-weight:800;">BET SPREAD</span>.</td>
 </tr>
 <tr style="border-bottom:1px solid var(--border-light);">
-<td style="padding:10px 6px;"><span class="signal-badge badge-stayaway" style="font-size:10px;">⚠️ STAY AWAY</span></td>
-<td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">Favorite leads AND is <strong>hot from 3</strong>. Looks tempting to bet the dog, but data shows <strong>dog covers only 35%</strong>. This is a trap.</td>
-<td style="padding:10px 6px;font-weight:700;color:#dc2626;"><strong>DO NOT BET.</strong> Skip this game entirely. The favorite's 3PT dominance is real, not fragile.</td>
-</tr>
-<tr style="border-bottom:1px solid var(--border-light);">
 <td style="padding:10px 6px;"><span class="signal-badge badge-star" style="font-size:10px;">STAR COIL</span></td>
 <td style="padding:10px 6px;color:var(--text-secondary);line-height:1.5;">A star player (25+ PPG) is cold (&lt;65% pace) AND the game is close (within 15pts) in Q2-Q3. Supporting cast analysis determines strength.</td>
 <td style="padding:10px 6px;font-weight:700;color:var(--green);">Bet the <strong>star's team</strong> if cast is strong. Legacy signal — use with DOG/FAV for confirmation.</td>
@@ -4573,27 +4428,14 @@ try {
 
 <div class="guide-card"><h3><span class="signal-badge badge-dog">DOG</span> Dog Signal</h3><p class="edge-label">Pre-game underdog leading — 63-71% cover rate with tier upgrades</p><p><strong>DOG LEADING:</strong> Pre-game dog ahead at 14+ min (63.4% cover).</p><p><strong>DOG PHYSICAL:</strong> + dog wins rebound battle (65.5% cover).</p><p><strong>DOG STRONG:</strong> + dog leads 5+ AND wins REB AND wins FTA (70.6% cover).</p><p><strong>Hybrid ML/SPREAD:</strong> If dog ML &ge; -100 → BET ML (gold). If dog ML &lt; -100 → BET SPREAD (blue).</p><div class="threshold">Trigger: Pre-game dog leading at 14+ min elapsed.<br>Tiers upgrade with REB/FTA dominance.</div></div>
 
-<div class="guide-card"><h3><span class="signal-badge badge-stayaway">⚠️</span> Stay Away (Anti-Signal)</h3><p class="edge-label">3PT Fragile is DISPROVEN as a bet signal — it's now a warning</p><p>When the favorite leads AND is hot from 3PT, this looks like a regression opportunity. <strong>But data shows it's a trap:</strong> the dog covers only 35% in this spot. Hot 3PT shooting by the fav = real dominance, not fragile.</p><p>The old "3PT Fragile" signal has been converted to an anti-signal. Do NOT bet the dog when this fires.</p><div class="threshold">Trigger: Fav leads 3+ AND has 3PT Fragile signal active.<br>Action: STAY AWAY. Do not bet.</div></div>
-
 <div class="guide-card"><h3><span class="signal-badge badge-star">STAR</span> Star Coil (Legacy)</h3><p class="edge-label">Star cold + game close — use as confirmation for DOG signals</p><p>When a 25+ PPG star is at &lt;65% of expected pace AND the game is within 15 points during Q2-Q3. Supporting cast analysis determines signal strength.</p><p>This signal is kept for supplemental confirmation. The DOG signal now captures the core validated edge (pre-game dog leading).</p><div class="threshold">Trigger: Star &lt;65% pace + margin &le;15 + Q2-Q3.</div></div>
 
 </div></div>
 <div id="theory-panel" class="theory-panel">
   <h4>How This Dashboard Works</h4>
-  <p>Every signal in this dashboard shares one thesis: <strong>the current score was built on something unsustainable, so the live moneyline is mispriced.</strong> Live odds react to the scoreboard, but they fail to distinguish between sustainable scoring (paint, mid-range) and unsustainable scoring (hot 3PT streaks, star underperformance). The 2-signal system (3PT Fragile + Star Coil) plus Combined Edge identifies when these unsustainable conditions exist — that is the edge.</p>
+  <p>Every signal in this dashboard shares one thesis: <strong>the current score was built on something unsustainable, so the live spread is mispriced.</strong> Live odds react to the scoreboard, but they fail to distinguish between sustainable scoring and unsustainable conditions. The FAV/DOG signals (validated with real live odds) plus Star Coil identifies when these conditions exist.</p>
   <hr class="signal-divider">
-  <h4>1. 3PT Fragile Lead (Merged Signal)</h4>
-  <p><strong>What it detects:</strong> This is the most selective signal — it requires BOTH of two conditions to be true simultaneously:</p>
-  <p><strong>Condition 1 — Hot 3PT Shooting:</strong> A team shooting 50%+ from three-point range on 12+ attempts (or 55%+ on 8+). The NBA league average is ~36.5%. This rate is 2+ standard deviations above the mean and will regress.</p>
-  <p><strong>Condition 2 — Fragile Lead Composition:</strong> The same team's lead is 42%+ dependent on 3PT scoring AND the trailing team scores from the paint (58%+ non-3PT). The lead is not just hot — it's structurally dependent on that hot shooting.</p>
-  <p><strong>Why both conditions matter:</strong> Hot 3PT shooting alone doesn't mean the lead is fragile — the team might also be scoring from the paint. And a fragile lead composition alone doesn't mean the shooting will regress — the percentage might be within normal range. Only when BOTH are true is the edge genuine: the shooting WILL cool off AND the lead DEPENDS on it.</p>
-  <div class="edge-box">
-    <p><strong>Trigger:</strong> 3PT% &ge;50% on &ge;12 attempts (or 55%+ on 8+) AND lead composition &ge;42% from 3PT AND opponent &ge;58% non-3PT AND &ge;20 total points AND lead between 3-15 pts. All conditions must be met for Level 2 (strong) signal. The 3-15pt margin filter ensures the lead is real but erasable — not a blowout, not a dead heat.</p>
-  </div>
-  <p><strong>When only one condition is met:</strong> If only the 3PT shooting is hot (no fragile lead) or only the lead is fragile (shooting not extreme), the system shows a Level 1 warning but does NOT fire the full signal.</p>
-  <p><strong>⚠️ Opponent Engine Check (NEW):</strong> Even when 3PT Fragile fires, the system checks: can the trailing team actually score without relying on the opponent's regression? It computes the trailing team's non-3PT points per minute (paint + FT + mid-range). If below 1.3 PPM, their offense is fundamentally broken — even if the leading team's 3s cool down, the trailing team has no engine to capitalize. The signal is downgraded to ⚠️ (weaker). <strong>Regression only matters if the other team can take advantage of it.</strong></p>
-  <hr class="signal-divider">
-  <h4>2. Star Coil (with Supporting Cast + Damage Locked)</h4>
+  <h4>1. Star Coil (with Supporting Cast + Damage Locked)</h4>
   <p><strong>What it detects:</strong> A franchise-caliber player performing well below their expected scoring pace (&lt;65%) during Q2-Q3 AND the game is competitive (within 15 points).</p>
   <p><strong>💪 Supporting Cast Analysis:</strong> The core edge strengthener. Instead of comparing to season averages, the system uses <strong>pure live data</strong>: it takes the team's score, subtracts the star's points, and compares that directly to the opponent's total score. This "cast gap" tells you how well the teammates are doing against THIS specific opponent in THIS game.</p>
   <ul style="margin:8px 0;padding-left:20px;line-height:1.5;">
@@ -4609,18 +4451,17 @@ try {
     <p style="margin-top:6px"><strong>Tiers:</strong> Elite (cast gap ≥-8, 1.5× weight), Standard (-8 to -15, 1× weight), Weak (&lt;-15, 0 weight), Locked (deficit baked in, reverse bet).</p>
   </div>
   <hr class="signal-divider">
-  <h4>3. Combined Edge</h4>
-  <p><strong>What it detects:</strong> When both 3PT Fragile and Star Coil fire on the same game. These two signals measure genuinely different dimensions of unsustainability — no overlap or double-counting.</p>
+  <h4>2. Combined Edge</h4>
+  <p><strong>What it detects:</strong> When multiple independent signals (FAV, DOG, Star Coil) fire on the same game. These signals measure different dimensions of the game state.</p>
   <div class="edge-box purple">
-    <p><strong>How it works:</strong> The system checks for Level 2 signals on both types. When both fire, the thesis elevates to signalLevel = 2 (strong combined).</p>
-    <p style="margin-top:6px"><strong>3PT Fragile + Star Coil:</strong> Opponent's lead is built on hot 3PT shooting AND their star is cold in a close game. When the star heats up and 3PT% drops, momentum shifts hard. This is the maximum edge scenario.</p>
+    <p><strong>How it works:</strong> The system checks for Level 2 signals across all types. When 2+ fire, the thesis elevates to signalLevel = 2 (strong combined).</p>
   </div>
   <hr class="signal-divider">
-  <h4>Bet Side Logic (ML Signals)</h4>
-  <p>The system scores each side's "unsustainability count" with two key modifiers:</p>
+  <h4>Bet Side Logic</h4>
+  <p>The system scores each side's "unsustainability count" with key modifiers:</p>
   <ul style="margin:8px 0;padding-left:20px;line-height:1.6;">
-    <li><strong>3PT Fragile + Opponent Engine:</strong> If the trailing team can't score (non-3PT PPM &lt; 1.3), the fade signal is weakened — regression won't help a broken offense.</li>
     <li><strong>Star Coil + Damage Locked:</strong> If the star's team deficit is stable/growing over 3+ checks, the bet flips — fade the star's team instead of betting on them.</li>
+    <li><strong>FAV/DOG signals:</strong> Override fade logic when pre-game favorite or dog is winning — these are the strongest validated signals.</li>
   </ul>
   <p>The side with more fade reasons gets faded; the system recommends the opposite side — the team whose advantages are real, sustainable, and undervalued.</p>
   <hr class="signal-divider">
